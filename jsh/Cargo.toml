@@ -1,0 +1,11 @@
+[package]
+name = "jsh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustyline = "14.0.0"
+crossterm = "0.29"
+
+[patch.crates-io]
+rustyline = { path = "vendor/rustyline" }
