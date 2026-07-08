@@ -5,10 +5,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-use crossterm::style::Stylize;
-
-// Embed the AlinixLogo font file bytes directly in the binary
-const FONT_BYTES: &[u8] = include_bytes!("/home/jefferson/Desktop/projects/Alinix/Alinix-deb/assets/AlinixLogo-Regular.otf");
+use crossterm::style::{Color, Stylize};
 
 pub struct ShellState {
     pub last_exit_status: i32,
@@ -48,73 +45,6 @@ impl ShellState {
             init_info: true,
             aliases: aliases_map,
             old_pwd: None,
-        }
-    }
-
-    pub fn ensure_font_installed(&self) {
-        #[cfg(unix)]
-        {
-            let fonts_dir = self.home_dir.join(".local/share/fonts");
-            let target_font = fonts_dir.join("AlinixLogo-Regular.otf");
-            let mut cache_updated = false;
-
-            if !target_font.exists() {
-                let _ = fs::create_dir_all(&fonts_dir);
-                if fs::write(&target_font, FONT_BYTES).is_ok() {
-                    cache_updated = true;
-                }
-            }
-
-            let fontconfig_dir = self.home_dir.join(".config/fontconfig");
-            let fonts_conf = fontconfig_dir.join("fonts.conf");
-            if !fonts_conf.exists() {
-                let _ = fs::create_dir_all(&fontconfig_dir);
-                let fallback_xml = "\
-<?xml version=\"1.0\"?>
-<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">
-<fontconfig>
-    <!-- Fallback AlinixLogo for monospace fonts -->
-    <match target=\"pattern\">
-        <test qual=\"any\" name=\"family\">
-            <string>monospace</string>
-        </test>
-        <edit name=\"family\" mode=\"append\" binding=\"strong\">
-            <string>AlinixLogo</string>
-        </edit>
-    </match>
-</fontconfig>
-";
-                if fs::write(&fonts_conf, fallback_xml).is_ok() {
-                    cache_updated = true;
-                }
-            }
-
-            if cache_updated {
-                let _ = Command::new("fc-cache")
-                    .arg("-f")
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-        }
-        #[cfg(target_os = "macos")]
-        {
-            let fonts_dir = self.home_dir.join("Library/Fonts");
-            let target_font = fonts_dir.join("AlinixLogo-Regular.otf");
-            if !target_font.exists() {
-                let _ = fs::write(&target_font, FONT_BYTES);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let Some(local_appdata) = env::var_os("LOCALAPPDATA").map(PathBuf::from) {
-                let fonts_dir = local_appdata.join("Microsoft\\Windows\\Fonts");
-                let target_font = fonts_dir.join("AlinixLogo-Regular.otf");
-                if !target_font.exists() {
-                    let _ = fs::create_dir_all(&fonts_dir);
-                    let _ = fs::write(&target_font, FONT_BYTES);
-                }
-            }
         }
     }
 
@@ -224,6 +154,83 @@ export PATH=/bin:/usr/bin:/usr/local/bin
         env::var("SSH_CLIENT").is_ok() || env::var("SSH_TTY").is_ok() || env::var("SSH_CONNECTION").is_ok()
     }
 
+    /// Detect the current distro/OS.
+    /// Returns (id, id_like, name). On Linux it reads `/etc/os-release`.
+    fn detect_distro(&self) -> (String, String, String) {
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(content) = fs::read_to_string("/etc/os-release") {
+                let mut id = String::new();
+                let mut id_like = String::new();
+                let mut name = String::new();
+                for line in content.lines() {
+                    if let Some(v) = line.strip_prefix("ID=") {
+                        id = v.trim_matches('"').to_string();
+                    } else if let Some(v) = line.strip_prefix("ID_LIKE=") {
+                        id_like = v.trim_matches('"').to_string();
+                    } else if let Some(v) = line.strip_prefix("NAME=") {
+                        name = v.trim_matches('"').to_string();
+                    }
+                }
+                if !id.is_empty() || !id_like.is_empty() {
+                    return (id, id_like, name);
+                }
+            }
+            return ("linux".to_string(), String::new(), "Linux".to_string());
+        }
+        #[cfg(target_os = "macos")]
+        {
+            return ("macos".to_string(), String::new(), "macOS".to_string());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return ("windows".to_string(), String::new(), "Windows".to_string());
+        }
+        #[allow(unreachable_code)]
+        ("linux".to_string(), String::new(), "Linux".to_string())
+    }
+
+    /// Map a distro id to a single-glyph logo and a brand-ish color.
+    fn logo_for(candidate: &str) -> Option<(char, Color)> {
+        Some(match candidate {
+            "zorin" => ('Z', Color::Magenta),
+            "ubuntu" => ('U', Color::Rgb { r: 228, g: 76, b: 23 }),
+            "linuxmint" | "mint" => ('M', Color::Green),
+            "elementary" => ('e', Color::Blue),
+            "pop" | "pop_os" => ('P', Color::Cyan),
+            "arch" | "archarm" => ('A', Color::Cyan),
+            "manjaro" => ('M', Color::Green),
+            "endeavouros" | "endeavour" => ('E', Color::Cyan),
+            "fedora" => ('F', Color::Blue),
+            "debian" => ('D', Color::Red),
+            "raspbian" => ('R', Color::Red),
+            "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" => ('S', Color::Green),
+            "gentoo" => ('G', Color::Cyan),
+            "void" => ('V', Color::Green),
+            "alpine" => ('A', Color::Cyan),
+            "centos" => ('C', Color::Yellow),
+            "rhel" => ('R', Color::Red),
+            "kali" => ('K', Color::Blue),
+            "macos" => ('M', Color::White),
+            "windows" => ('W', Color::Cyan),
+            _ => return None,
+        })
+    }
+
+    /// Returns the OS logo glyph (styled) for the running system.
+    fn os_logo(&self) -> String {
+        let (id, id_like, _name) = self.detect_distro();
+        let mut candidates: Vec<String> = vec![id];
+        candidates.extend(id_like.split_whitespace().map(|s| s.to_string()));
+
+        let (glyph, color) = candidates
+            .iter()
+            .find_map(|c| Self::logo_for(c))
+            .unwrap_or(('L', Color::Yellow));
+
+        glyph.to_string().with(color).bold().to_string()
+    }
+
     pub fn render_prompt(&self) -> String {
         let status_part = if self.last_exit_status == 0 {
             "".to_string()
@@ -239,8 +246,6 @@ export PATH=/bin:/usr/bin:/usr/local/bin
             "".to_string()
         };
 
-        let logo = '\u{e000}';
-        
         let git_part = match self.get_git_branch() {
             Some(branch) => format!(" {}", branch.green()),
             None => "".to_string(),
@@ -250,7 +255,7 @@ export PATH=/bin:/usr/bin:/usr/local/bin
             "{}{}{} {} {} {} ",
             status_part,
             ssh_part,
-            logo.to_string().bold().magenta(),
+            self.os_logo(),
             self.get_current_dir_short().bold().magenta(),
             git_part,
             ">".magenta()

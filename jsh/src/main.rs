@@ -21,9 +21,6 @@ use crate::utils::expand_env_vars;
 fn main() {
     let mut state = ShellState::new();
 
-    // Ensure font settings are configured
-    state.ensure_font_installed();
-
     // Load config from .jshrc
     state.load_jshrc();
 
