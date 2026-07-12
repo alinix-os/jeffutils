@@ -4,6 +4,9 @@
 
 pub mod dir;
 pub mod file;
+pub mod safety;
+
+use crate::safety::Risk;
 
 use std::io::Write;
 use std::str::FromStr;
@@ -90,16 +93,32 @@ fn main() {
     let force = argv.contains(&ARGS::FORCE);
     let is_dir = argv.contains(&ARGS::DIR);
 
-    if !force {
-        let prompt = if is_dir {
-            format!("Remove directory '{}'{}?", path, if recursive { " and its contents" } else { "" })
-        } else {
-            format!("Remove file '{}'?", path)
-        };
+    match safety::assess(&path) {
+        Risk::Forbidden(reason) => {
+            eprintln!("\x1b[1;31mrefused:\x1b[0m {}", reason);
+            std::process::exit(1);
+        }
+        Risk::Critical(resolved) => {
+            // Extremely dangerous target: always require the exact-path
+            // confirmation, regardless of --force.
+            if !safety::confirm_exact(&resolved) {
+                println!("Aborted");
+                std::process::exit(0);
+            }
+        }
+        Risk::Normal => {
+            if !force {
+                let prompt = if is_dir {
+                    format!("Remove directory '{}'{}?", path, if recursive { " and its contents" } else { "" })
+                } else {
+                    format!("Remove file '{}'?", path)
+                };
 
-        if !confirm(&prompt) {
-            println!("Aborted");
-            std::process::exit(0);
+                if !confirm(&prompt) {
+                    println!("Aborted");
+                    std::process::exit(0);
+                }
+            }
         }
     }
 

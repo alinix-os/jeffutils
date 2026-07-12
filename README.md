@@ -26,7 +26,7 @@ Organizados por categoria (cada um é um crate independente do workspace):
 | **Rede** | `net`, `dns`, `ping` |
 | **Disco & memória** | `mount`, `umount`, `fscheck`, `memory`, `zram`, `clear-cache` |
 | **Energia** | `poweroff`, `reboot` |
-| **Diversos** | `pwd`, `which`, `uuid`, `sleep`, `alipack` |
+| **Diversos** | `pwd`, `which`, `uuid`, `sleep` |
 
 ## Compilação
 
