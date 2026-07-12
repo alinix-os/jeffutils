@@ -4,7 +4,7 @@ fn print_usage() {
     eprintln!("Usage: {} [caminho] [-L <nível>]", std::env::args().nth(0).unwrap_or_else(|| "tree".into()));
 }
 
-fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize, _is_last: bool) {
+fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize) {
     if let Some(max) = max_depth {
         if depth > max {
             return;
@@ -22,15 +22,14 @@ fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize, _
     for (i, entry) in files.iter().enumerate() {
         let is_last_entry = i == files.len() - 1;
         let connector = if is_last_entry { "└── " } else { "├── " };
-        let new_prefix = if is_last_entry { "    " } else { "│   " };
 
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        println!("{}{}{}", prefix, connector, name_str);
+
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            println!("{}{}{}", new_prefix, connector, name_str);
-            walk_dir(&entry.path(), &format!("{}{}", prefix, new_prefix), max_depth, depth + 1, is_last_entry);
-        } else {
-            println!("{}{}{}", prefix, connector, name_str);
+            let next_prefix = format!("{}{}", prefix, if is_last_entry { "    " } else { "│   " });
+            walk_dir(&entry.path(), &next_prefix, max_depth, depth + 1);
         }
     }
 }
@@ -53,7 +52,7 @@ fn main() {
                 return;
             }
             "--version" => {
-                println!("tree version 0.1.0");
+                println!("tree version 0.2.0");
                 return;
             }
             "-L" | "--max-depth" => {
@@ -74,5 +73,5 @@ fn main() {
     }
 
     println!("{}", root);
-    walk_dir(path, "", max_depth, 1, true);
+    walk_dir(path, "", max_depth, 1);
 }

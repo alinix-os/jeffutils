@@ -72,7 +72,24 @@ fn get_cpu_info() -> String {
 
 #[cfg(not(target_os = "linux"))]
 fn get_cpu_info() -> String {
-    "unknown".into()
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("sysctl")
+            .args(["-n", "machdep.cpu.brand_string"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "unknown".into())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_else(|_| "unknown".into())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "unknown".into()
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -95,7 +112,22 @@ fn get_memory() -> String {
 
 #[cfg(not(target_os = "linux"))]
 fn get_memory() -> String {
-    "unknown".into()
+    #[cfg(target_os = "macos")]
+    {
+        let total_bytes = std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(0);
+        let total_mb = total_bytes / 1024 / 1024;
+        format!("{} MB total", total_mb)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "unknown".into()
+    }
 }
 
 fn main() {

@@ -16,6 +16,10 @@ pub fn is_builtin(name: &str) -> bool {
             | "unalias"
             | "set"
             | "help"
+            | "exec"
+            | "read"
+            | "source"
+            | "."
     )
 }
 
@@ -45,6 +49,9 @@ pub fn run(
         "unalias" => unalias(shell, args, err),
         "set" => set(shell, out),
         "help" => help(out),
+        "exec" => exec(shell, args, err),
+        "read" => read(shell, args, err),
+        "source" | "." => source(shell, args, err),
         _ => return None,
     };
     Some(status)
@@ -243,8 +250,69 @@ fn set(shell: &mut Shell, out: &mut dyn Write) -> i32 {
 fn help(out: &mut dyn Write) -> i32 {
     let _ = writeln!(
         out,
-        "Built-ins: cd pwd echo exit export unset env true false : alias unalias set help"
+        "Built-ins: cd pwd echo exit export unset env true false : alias unalias set help exec read source ."
     );
     0
 }
+
+fn exec(shell: &mut Shell, args: &[String], err: &mut dyn Write) -> i32 {
+    if args.is_empty() {
+        return 0;
+    }
+    let program = &args[0];
+    let mut command = std::process::Command::new(program);
+    command.args(&args[1..]);
+
+    let env = shell.combined_env();
+    command.env_clear();
+    command.envs(env);
+
+    use std::os::unix::process::CommandExt;
+    let error = command.exec();
+    let _ = writeln!(err, "sh: exec: {program}: {error}");
+    127
+}
+
+fn read(shell: &mut Shell, args: &[String], err: &mut dyn Write) -> i32 {
+    if args.is_empty() {
+        let _ = writeln!(err, "read: missing variable name");
+        return 1;
+    }
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        return 1;
+    }
+    let input = input.trim_end_matches('\n');
+
+    if args.len() == 1 {
+        shell.set_var(&args[0], input);
+    } else {
+        let words: Vec<&str> = input.split_whitespace().collect();
+        for (i, var) in args.iter().enumerate() {
+            if i == args.len() - 1 {
+                let remaining = words.get(i..).map(|w| w.join(" ")).unwrap_or_default();
+                shell.set_var(var, &remaining);
+            } else {
+                let val = words.get(i).cloned().unwrap_or("");
+                shell.set_var(var, val);
+            }
+        }
+    }
+    0
+}
+
+fn source(shell: &mut Shell, args: &[String], err: &mut dyn Write) -> i32 {
+    if args.is_empty() {
+        let _ = writeln!(err, "source: filename argument required");
+        return 1;
+    }
+    let script = &args[0];
+    if let Err(e) = shell.run_script(script) {
+        let _ = writeln!(err, "sh: source: {script}: {e}");
+        return 127;
+    }
+    shell.last_status
+}
+
+
 

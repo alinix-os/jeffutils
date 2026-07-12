@@ -1,8 +1,11 @@
+use std::time::Duration;
+
 fn print_usage() {
-    eprintln!("Usage: {} [s|h|m]", std::env::args().nth(0).unwrap_or_else(|| "sleep".into()));
+    eprintln!("Usage: sleep <duration>[s|m|h|d]...  or run sleep without arguments to suspend system.");
+    eprintln!("Pause for NUMBER of seconds. Suffixes s (seconds), m (minutes), h (hours), d (days) are supported.");
 }
 
-fn parse_duration(s: &str) -> Option<u64> {
+fn parse_duration(s: &str) -> Option<Duration> {
     let s = s.trim();
     if s.is_empty() {
         return None;
@@ -15,11 +18,15 @@ fn parse_duration(s: &str) -> Option<u64> {
         (s, "s")
     };
 
-    let value: u64 = num_str.parse().ok()?;
+    let value: f64 = num_str.parse().ok()?;
+    if value < 0.0 {
+        return None;
+    }
     match unit {
-        "s" => Some(value),
-        "m" => Some(value * 60),
-        "h" => Some(value * 3600),
+        "s" => Some(Duration::from_secs_f64(value)),
+        "m" => Some(Duration::from_secs_f64(value * 60.0)),
+        "h" => Some(Duration::from_secs_f64(value * 3600.0)),
+        "d" => Some(Duration::from_secs_f64(value * 86400.0)),
         _ => None,
     }
 }
@@ -31,14 +38,12 @@ fn main() {
         match arg.as_str() {
             "--help" | "-h" => {
                 print_usage();
-                println!("Puts the system to sleep.");
-                println!("  <duration>  Sleep duration (e.g., 30s, 5m, 1h)");
                 println!("  --help, -h  Show this help message");
                 println!("  --version   Show version information");
                 return;
             }
             "--version" => {
-                println!("sleep version 0.1.0");
+                println!("sleep version 0.2.0");
                 return;
             }
             _ => {}
@@ -46,6 +51,7 @@ fn main() {
     }
 
     if args.is_empty() {
+        // Suspend the system (as per JeffUtils custom specification)
         #[cfg(target_os = "linux")]
         let status = std::process::Command::new("systemctl").args(["suspend"]).status();
 
@@ -70,10 +76,15 @@ fn main() {
             }
         }
     } else {
-        let duration = parse_duration(&args[0]).unwrap_or_else(|| {
-            eprintln!("Error: invalid duration '{}'. Use format like 30s, 5m, 1h", args[0]);
-            std::process::exit(1);
-        });
-        std::thread::sleep(std::time::Duration::from_secs(duration));
+        let mut total_duration = Duration::ZERO;
+        for arg in &args {
+            if let Some(d) = parse_duration(arg) {
+                total_duration += d;
+            } else {
+                eprintln!("Error: invalid duration '{}'. Use format like 30s, 0.5s, 5m, 1h", arg);
+                std::process::exit(1);
+            }
+        }
+        std::thread::sleep(total_duration);
     }
 }

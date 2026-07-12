@@ -2,12 +2,35 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+fn print_usage() {
+    eprintln!("Uso: stat [OPÇÃO] <arquivo/diretório>");
+    eprintln!("Exibe o status de um arquivo ou diretório.");
+    eprintln!();
+    eprintln!("Opções:");
+    eprintln!("  -h, --help      exibe esta ajuda e sai");
+    eprintln!("      --version   exibe a versão e sai");
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+
+    // Check help and version
+    for arg in &args {
+        if arg == "-h" || arg == "--help" {
+            print_usage();
+            return;
+        }
+        if arg == "--version" {
+            println!("stat (JeffUtils) 1.0");
+            return;
+        }
+    }
+
     if args.is_empty() {
-        eprintln!("Uso: stat <arquivo/diretório>");
+        print_usage();
         std::process::exit(1);
     }
+
     let path_str = &args[0];
     let path = Path::new(path_str);
     if !path.exists() {
@@ -27,12 +50,27 @@ fn main() {
             }
             #[cfg(unix)]
             {
-                use std::os::unix::fs::MetadataExt;
-                println!("     Perms: {:o}", meta.permissions().readonly() as u32);
+                use std::os::unix::fs::{MetadataExt, PermissionsExt};
+                let mode = meta.permissions().mode();
+                println!("     Perms: {:o} ({})", mode & 0o777, format_mode(mode));
                 println!("       UID: {}", meta.uid());
                 println!("       GID: {}", meta.gid());
             }
         }
         Err(e) => eprintln!("Erro ao obter metadados: {}", e),
     }
+}
+
+#[cfg(unix)]
+fn format_mode(mode: u32) -> String {
+    let r  = if mode & 0o400 != 0 { "r" } else { "-" };
+    let w  = if mode & 0o200 != 0 { "w" } else { "-" };
+    let x  = if mode & 0o100 != 0 { "x" } else { "-" };
+    let r2 = if mode & 0o040 != 0 { "r" } else { "-" };
+    let w2 = if mode & 0o020 != 0 { "w" } else { "-" };
+    let x2 = if mode & 0o010 != 0 { "x" } else { "-" };
+    let r3 = if mode & 0o004 != 0 { "r" } else { "-" };
+    let w3 = if mode & 0o002 != 0 { "w" } else { "-" };
+    let x3 = if mode & 0o001 != 0 { "x" } else { "-" };
+    format!("{}{}{}{}{}{}{}{}{}", r, w, x, r2, w2, x2, r3, w3, x3)
 }

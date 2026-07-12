@@ -2,7 +2,7 @@ use super::*;
 use super::lexer::{Redirect, Token};
 
 /// Builds a `Command` from the buffered words/redirects and pushes it onto `commands`.
-fn finalize(words: &mut Vec<String>, redirects: &mut Vec<Redirect>, commands: &mut Vec<Command>) {
+fn finalize(words: &mut Vec<Word>, redirects: &mut Vec<Redirect>, commands: &mut Vec<Command>) {
     if words.is_empty() {
         return;
     }
@@ -36,19 +36,73 @@ fn finalize(words: &mut Vec<String>, redirects: &mut Vec<Redirect>, commands: &m
     });
 }
 
-pub fn parse(tokens: Vec<Token>) -> Pipeline {
+fn finalize_pipeline(
+    words: &mut Vec<Word>,
+    redirects: &mut Vec<Redirect>,
+    commands: &mut Vec<Command>,
+) -> Option<Pipeline> {
+    finalize(words, redirects, commands);
+    if commands.is_empty() {
+        None
+    } else {
+        Some(Pipeline {
+            commands: std::mem::take(commands),
+        })
+    }
+}
+
+/// Parses a full line (possibly containing `;`, `&&`, `||`, `|`, and a
+/// trailing `&`) into a `CommandList`.
+pub fn parse(tokens: Vec<Token>) -> CommandList {
+    let mut items: Vec<(AndOrList, Option<ListOp>)> = Vec::new();
+
     let mut commands: Vec<Command> = Vec::new();
-    let mut words: Vec<String> = Vec::new();
+    let mut words: Vec<Word> = Vec::new();
     let mut redirects: Vec<Redirect> = Vec::new();
+    let mut background = false;
 
     for token in tokens {
         match token {
             Token::Word(w) => words.push(w),
-            Token::Pipe => finalize(&mut words, &mut redirects, &mut commands),
             Token::Redirect(r) => redirects.push(r),
+            Token::Pipe => finalize(&mut words, &mut redirects, &mut commands),
+            Token::Semi => {
+                close_item(&mut words, &mut redirects, &mut commands, &mut background, Some(ListOp::Seq), &mut items);
+            }
+            Token::And => {
+                close_item(&mut words, &mut redirects, &mut commands, &mut background, Some(ListOp::And), &mut items);
+            }
+            Token::Or => {
+                close_item(&mut words, &mut redirects, &mut commands, &mut background, Some(ListOp::Or), &mut items);
+            }
+            Token::Background => {
+                background = true;
+                close_item(&mut words, &mut redirects, &mut commands, &mut background, None, &mut items);
+            }
         }
     }
-    finalize(&mut words, &mut redirects, &mut commands);
+    // Trailing pipeline with no following operator.
+    close_item(&mut words, &mut redirects, &mut commands, &mut background, None, &mut items);
 
-    Pipeline { commands }
+    CommandList { items }
+}
+
+fn close_item(
+    words: &mut Vec<Word>,
+    redirects: &mut Vec<Redirect>,
+    commands: &mut Vec<Command>,
+    background: &mut bool,
+    op: Option<ListOp>,
+    items: &mut Vec<(AndOrList, Option<ListOp>)>,
+) {
+    if let Some(pipeline) = finalize_pipeline(words, redirects, commands) {
+        items.push((
+            AndOrList {
+                pipeline,
+                background: *background,
+            },
+            op,
+        ));
+    }
+    *background = false;
 }

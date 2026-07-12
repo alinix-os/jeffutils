@@ -1,4 +1,4 @@
-// texit — Native text editor for JeffNix / Alinix Distro
+// texit — Native terminal text editor for Unix/Linux/macOS/Windows
 //
 // Usage: texit [path/to/file]
 //

@@ -5,7 +5,7 @@ use crate::executor;
 use crate::lexer;
 use crate::parser;
 use std::collections::{HashMap, HashSet};
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Write, IsTerminal};
 
 /// Mutable shell state shared across commands.
 #[derive(Clone)]
@@ -141,12 +141,17 @@ impl Shell {
     /// Run the interactive REPL until EOF or `exit`.
     pub fn run_repl(&mut self) {
         let stdin = io::stdin();
+        let is_term = stdin.is_terminal();
         loop {
-            print!("$ ");
-            io::stdout().flush().ok();
+            if is_term {
+                print!("$ ");
+                io::stdout().flush().ok();
+            }
             let mut input = String::new();
             if stdin.lock().read_line(&mut input).is_err() || input.is_empty() {
-                println!();
+                if is_term {
+                    println!();
+                }
                 break;
             }
             let line = input.trim_end();

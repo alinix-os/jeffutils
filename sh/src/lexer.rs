@@ -324,13 +324,21 @@ pub fn tokenize(input: &str) -> Result<Vec<Tok>, String> {
     let n = s.len();
     let mut toks = Vec::new();
     let mut i = 0;
+    let mut after_whitespace = true;
 
     while i < n {
         let c = s[i];
         if c.is_whitespace() {
             i += 1;
+            after_whitespace = true;
             continue;
         }
+
+        if c == '#' && after_whitespace {
+            break;
+        }
+        after_whitespace = false;
+
 
         if c == '|' {
             if i + 1 < n && s[i + 1] == '|' {

@@ -1,0 +1,10 @@
+{
+  "name": "jeffutils",
+  "version": "1.0.1",
+  "description": "JeffUtils - suite of command-line utilities for Alinix OS",
+  "maintainer": "Alinix OS <dev@alinix.io>",
+  "architecture": "amd64",
+  "depends": "libc6",
+  "section": "utils",
+  "priority": "optional"
+}

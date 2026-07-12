@@ -64,9 +64,6 @@ TARGET_win_arm     := aarch64-pc-windows-msvc
 TARGET_mac_x86     := x86_64-apple-darwin
 TARGET_mac_arm     := aarch64-apple-darwin
 
-TARGET_JeffNix_x86 := x86_64-unknown-linux-gnu
-TARGET_JeffNix_arm := aarch64-unknown-linux-gnu
-
 
 # ============================================================
 # Install
@@ -74,7 +71,6 @@ TARGET_JeffNix_arm := aarch64-unknown-linux-gnu
 
 INSTALL_unix    := /bin
 INSTALL_mac     := /usr/local/bin
-INSTALL_JeffNix := /Exec
 INSTALL_win     := C:/System32/JeffUtils
 
 
@@ -88,7 +84,7 @@ REL_DIR := target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)release
 
 
 
-.PHONY: all build build-all install install-all clean info $(PROJECTS)
+.PHONY: all build build-all install install-all clean info package-deb package-rpm package $(PROJECTS)
 
 
 
@@ -104,12 +100,9 @@ build: build-all
 # ============================================================
 
 build-all:
+	@echo ">> Building Rust projects (workspace)"
+	@$(CARGO) build --release $(if $(CARGO_TARGET),--target $(CARGO_TARGET)) --workspace
 
-	@for p in $(_RUST); do \
-		echo ">> Building $$p (Rust)"; \
-		cd $(ROOT_DIR)/$$p && \
-		$(CARGO) build --release $(if $(CARGO_TARGET),--target $(CARGO_TARGET)) || exit $$?; \
-	done
 
 	@for p in $(_MAKE); do \
 		echo ">> Building $$p (Make)"; \
@@ -144,11 +137,10 @@ $(PROJECTS):
 # ============================================================
 
 install install-all: build-all
-
 	@for p in $(PROJECTS); do \
 		echo ">> Installing $$p"; \
 		sudo mkdir -p $(DESTDIR); \
-		sudo cp $(ROOT_DIR)/$$p/$(REL_DIR)/$$p$(EXT) $(DESTDIR)/$$p$(EXT); \
+		sudo cp $(ROOT_DIR)/$(REL_DIR)/$$p$(EXT) $(DESTDIR)/$$p$(EXT); \
 	done
 
 	@echo "==> All installed to $(DESTDIR)"
@@ -156,14 +148,33 @@ install install-all: build-all
 
 
 install/%:
-
 	@echo ">> Installing $*"
-
 	@sudo mkdir -p $(DESTDIR)
-
 	@sudo cp \
-	$(ROOT_DIR)/$*/$(REL_DIR)/$*$(EXT) \
+	$(ROOT_DIR)/$(REL_DIR)/$*$(EXT) \
 	$(DESTDIR)/$*$(EXT)
+
+
+
+
+# ============================================================
+# PACKAGE (.deb / .rpm)
+# ============================================================
+#
+# Builds every utility (including jsh) plus the bundled JSH Mono font
+# (jsh/assets/font) into a single jeffutils package via fpm. Requires fpm
+# on PATH (gem install fpm), and dpkg-deb / rpmbuild for the respective
+# format. Output lands in dist/.
+
+package-deb: build-all
+	@mkdir -p $(ROOT_DIR)/dist
+	@REL_DIR=$(REL_DIR) $(ROOT_DIR)/packaging/build-pkg.sh deb
+
+package-rpm: build-all
+	@mkdir -p $(ROOT_DIR)/dist
+	@REL_DIR=$(REL_DIR) $(ROOT_DIR)/packaging/build-pkg.sh rpm
+
+package: package-deb package-rpm
 
 
 
@@ -187,6 +198,8 @@ clean:
 		echo ">> Cleaning $$p"; \
 		rm -rf $(ROOT_DIR)/$$p/build; \
 	done
+
+	@rm -rf $(ROOT_DIR)/dist
 
 	@echo "==> All projects cleaned."
 

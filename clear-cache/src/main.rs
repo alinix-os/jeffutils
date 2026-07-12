@@ -189,37 +189,78 @@ fn drop_linux_caches(dry_run: bool) {
     }
 }
 
-fn print_help() {
-    println!("Usage: clear-cache [OPTIONS]");
+fn print_help(prog: &str) {
+    println!("Usage: {prog} [OPTIONS]");
     println!();
     println!("Safely clears system and user cache/temp files and DNS without closing applications.");
     println!();
     println!("Options:");
     println!("  -d, --dry-run   Perform a trial run without deleting files");
     println!("  -v, --verbose   Show detailed logs of files/directories deleted");
+    println!("  -t, --temp      Clean temporary/temp directories only");
+    println!("  -c, --cache     Clean user and system cache directories only");
+    println!("      --dns       Flush DNS resolver cache only");
+    println!("      --ram       Drop OS memory caches only (Linux only, requires sudo/root)");
     println!("  -h, --help      Display this help menu");
 }
 
 fn main() {
     let mut dry_run = false;
     let mut verbose = false;
+    let mut clean_temp = false;
+    let mut clean_cache = false;
+    let mut clean_dns = false;
+    let mut clean_ram = false;
 
     let args: Vec<String> = env::args().collect();
+    let prog = args.first().map(String::as_str).unwrap_or("clear-cache");
+
     for arg in args.iter().skip(1) {
         match arg.as_str() {
             "-d" | "--dry-run" => dry_run = true,
             "-v" | "--verbose" => verbose = true,
+            "-t" | "--temp" => clean_temp = true,
+            "-c" | "--cache" => clean_cache = true,
+            "--dns" => clean_dns = true,
+            "--ram" => clean_ram = true,
             "-h" | "--help" => {
-                print_help();
+                print_help(prog);
                 return;
             }
-            _ => {
-                eprintln!("Unknown option: {}", arg);
-                print_help();
+            // Short flags — may be combined: -dvt etc.
+            s if s.starts_with('-') && s.len() > 1 && !s.starts_with("--") => {
+                for ch in s.chars().skip(1) {
+                    match ch {
+                        'd' => dry_run = true,
+                        'v' => verbose = true,
+                        't' => clean_temp = true,
+                        'c' => clean_cache = true,
+                        'h' => {
+                            print_help(prog);
+                            return;
+                        }
+                        c => {
+                            eprintln!("{prog}: invalid option -- '{c}'");
+                            eprintln!("Try '{prog} --help' for more information.");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+            other => {
+                eprintln!("{prog}: unrecognized option '{other}'");
+                eprintln!("Try '{prog} --help' for more information.");
                 std::process::exit(1);
             }
         }
     }
+
+    // Default to clean everything if no specific categories are selected
+    let clean_all = !clean_temp && !clean_cache && !clean_dns && !clean_ram;
+    let do_temp = clean_all || clean_temp;
+    let do_cache = clean_all || clean_cache;
+    let do_dns = clean_all || clean_dns;
+    let do_ram = clean_all || clean_ram;
 
     println!("=== Soft Reboot & Cache Cleaner ===");
     if dry_run {
@@ -232,30 +273,44 @@ fn main() {
     // Setup platform specific clean targets
     #[cfg(target_os = "windows")]
     {
-        if let Some(user_temp) = env::var_os("TEMP").map(PathBuf::from) {
-            targets.push(("User Temp Directory".to_string(), user_temp));
+        if do_cache {
+            targets.push(("Windows Update Cache".to_string(), PathBuf::from("C:\\Windows\\SoftwareDistribution\\Download")));
         }
-        targets.push(("System Temp Directory".to_string(), PathBuf::from("C:\\Windows\\Temp")));
-        targets.push(("Windows Prefetch".to_string(), PathBuf::from("C:\\Windows\\Prefetch")));
-        targets.push(("Windows Update Cache".to_string(), PathBuf::from("C:\\Windows\\SoftwareDistribution\\Download")));
+        if do_temp {
+            if let Some(user_temp) = env::var_os("TEMP").map(PathBuf::from) {
+                targets.push(("User Temp Directory".to_string(), user_temp));
+            }
+            targets.push(("System Temp Directory".to_string(), PathBuf::from("C:\\Windows\\Temp")));
+            targets.push(("Windows Prefetch".to_string(), PathBuf::from("C:\\Windows\\Prefetch")));
+        }
     }
 
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
-            targets.push(("User Cache Directory".to_string(), home.join("Library/Caches")));
-            targets.push(("User Logs Directory".to_string(), home.join("Library/Logs")));
+            if do_cache {
+                targets.push(("User Cache Directory".to_string(), home.join("Library/Caches")));
+            }
+            if do_temp {
+                targets.push(("User Logs Directory".to_string(), home.join("Library/Logs")));
+            }
         }
-        targets.push(("System Cache Directory".to_string(), PathBuf::from("/Library/Caches")));
+        if do_cache {
+            targets.push(("System Cache Directory".to_string(), PathBuf::from("/Library/Caches")));
+        }
     }
 
     #[cfg(target_os = "linux")]
     {
         if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
-            targets.push(("User Cache Directory".to_string(), home.join(".cache")));
+            if do_cache {
+                targets.push(("User Cache Directory".to_string(), home.join(".cache")));
+            }
         }
-        targets.push(("System Temp Directory".to_string(), PathBuf::from("/tmp")));
-        targets.push(("System Var-Temp Directory".to_string(), PathBuf::from("/var/tmp")));
+        if do_temp {
+            targets.push(("System Temp Directory".to_string(), PathBuf::from("/tmp")));
+            targets.push(("System Var-Temp Directory".to_string(), PathBuf::from("/var/tmp")));
+        }
     }
 
     // Clean all folder targets
@@ -270,10 +325,14 @@ fn main() {
     }
 
     // Flush DNS Cache
-    flush_dns(dry_run);
+    if do_dns {
+        flush_dns(dry_run);
+    }
 
     // Drop OS RAM Caches (Linux)
-    drop_linux_caches(dry_run);
+    if do_ram {
+        drop_linux_caches(dry_run);
+    }
 
     println!("\n=== Clean Summary ===");
     println!("Files deleted:     {}", total_stats.files_deleted);

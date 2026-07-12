@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+if command -v fc-cache >/dev/null 2>&1; then
+  fc-cache -f /usr/share/fonts/jsh-mono >/dev/null 2>&1 || true
+fi
+echo "jeffutils installed."

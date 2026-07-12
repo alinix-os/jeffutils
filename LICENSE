@@ -1,21 +1,41 @@
-MIT License
+========================================================================
+PORTUGUÊS (PT-BR)
+========================================================================
 
-Copyright (c) 2025 Jefferson
+Licença de Uso JeffUtils (Livre, Não Comercial e Multilinguagem)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright (c) 2026 Jefferson
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Por meio desta, é concedida permissão, gratuitamente, a qualquer pessoa que obtenha uma cópia deste software e arquivos de documentação associados (o "Software"), para utilizar, copiar, modificar, mesclar e distribuir cópias do Software, sujeita às seguintes condições:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. USO NÃO COMERCIAL (VENDA PROIBIDA):
+   É expressamente proibida a venda, aluguel, licenciamento comercial ou qualquer exploração comercial direta do Software ou de suas partes modificadas. O Software deve ser distribuído de forma totalmente gratuita.
+
+2. INTEGRAÇÃO E UTILIZAÇÃO COM OUTRAS LINGUAGENS:
+   É explicitamente permitido integrar, vincular (linkar), chamar ou utilizar este Software em conjunto com softwares ou bibliotecas desenvolvidos em qualquer outra linguagem de programação (como Python, C, C++, Rust, Go, JavaScript, etc.), seja como uma biblioteca externa, subprocesso ou dependência.
+
+3. MANUTENÇÃO DOS CRÉDITOS:
+   O aviso de copyright acima e este aviso de permissão devem ser incluídos em todas as cópias ou partes substanciais do Software.
+
+O SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO A, GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UM PROPÓSITO ESPECÍFICO E NÃO INFRAÇÃO. EM NENHUM CASO OS AUTORES OU DETENTORES DE DIREITOS AUTORAIS SERÃO RESPONSÁVEIS POR QUALQUER REIVINDICAÇÃO, DANOS OU OUTRA RESPONSABILIDADE, SEJA EM AÇÃO DE CONTRATO, ILÍCITO OU DE OUTRA FORMA, DECORRENTE DE, FORA DE OU EM CONEXÃO COM O SOFTWARE OU O USO OU OUTRAS NEGOCIAÇÕES NO SOFTWARE.
+
+========================================================================
+ENGLISH (EN)
+========================================================================
+
+JeffUtils License (Free, Non-Commercial, and Multilanguage)
+
+Copyright (c) 2026 Jefferson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to use, copy, modify, merge, and distribute copies of the Software, subject to the following conditions:
+
+1. NON-COMMERCIAL USE (SALE PROHIBITED):
+   The sale, rental, commercial licensing, or any direct commercial exploitation of the Software or its modified parts is expressly prohibited. The Software must be distributed entirely free of charge.
+
+2. INTEGRATION AND USE WITH OTHER LANGUAGES:
+   It is explicitly permitted to integrate, link, call, or use this Software in conjunction with software or libraries developed in any other programming language (such as Python, C, C++, Rust, Go, JavaScript, etc.), whether as an external library, subprocess, or dependency.
+
+3. MAINTENANCE OF CREDITS:
+   The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

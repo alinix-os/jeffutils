@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 fn config_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".config").join("jeffnix").join("clock.conf")
+    PathBuf::from(home).join(".config").join("jeffutils").join("clock.conf")
 }
 
 fn load_format() -> Option<String> {

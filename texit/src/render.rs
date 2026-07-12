@@ -67,7 +67,9 @@ impl Render {
                 let visible = &line[start..];
 
                 let end = visible.len().min(self.term_cols);
-                let _ = stdout.queue(Print(&visible[..end]));
+                let text_to_render = &visible[..end];
+                let highlighted = highlight_line(text_to_render);
+                let _ = stdout.queue(Print(highlighted));
             }
 
             let _ = stdout.queue(Clear(ClearType::UntilNewLine));
@@ -136,4 +138,94 @@ impl Render {
         let _ = stdout.queue(Print(self.pad(shortcuts)));
         let _ = stdout.queue(SetAttribute(Attribute::Reset));
     }
+}
+
+fn highlight_line(line: &str) -> String {
+    let keywords = [
+        "fn", "let", "mut", "match", "if", "else", "for", "while", "return", "use", "mod",
+        "struct", "impl", "pub", "static", "const", "true", "false", "import", "def", "class",
+        "print", "echo", "alias", "export", "local"
+    ];
+
+    let mut highlighted = String::new();
+    let mut chars = line.chars().peekable();
+
+    while let Some(&c) = chars.peek() {
+        if c == '/' {
+            chars.next();
+            if let Some(&'/') = chars.peek() {
+                highlighted.push_str("\x1B[90m//");
+                chars.next();
+                while let Some(cc) = chars.next() {
+                    highlighted.push(cc);
+                }
+                highlighted.push_str("\x1B[0m");
+                break;
+            } else {
+                highlighted.push('/');
+            }
+        } else if c == '#' {
+            highlighted.push_str("\x1B[90m#");
+            chars.next();
+            while let Some(cc) = chars.next() {
+                highlighted.push(cc);
+            }
+            highlighted.push_str("\x1B[0m");
+            break;
+        } else if c == '"' || c == '\'' {
+            let quote = c;
+            highlighted.push_str("\x1B[32m");
+            highlighted.push(quote);
+            chars.next();
+            let mut escaped = false;
+            while let Some(&cc) = chars.peek() {
+                highlighted.push(cc);
+                chars.next();
+                if escaped {
+                    escaped = false;
+                } else if cc == '\\' {
+                    escaped = true;
+                } else if cc == quote {
+                    break;
+                }
+            }
+            highlighted.push_str("\x1B[0m");
+        } else if c.is_ascii_digit() {
+            highlighted.push_str("\x1B[36m");
+            while let Some(&cc) = chars.peek() {
+                if cc.is_ascii_digit() || cc == '.' {
+                    highlighted.push(cc);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            highlighted.push_str("\x1B[0m");
+        } else if c.is_alphabetic() || c == '_' {
+            let mut word = String::new();
+            while let Some(&cc) = chars.peek() {
+                if cc.is_alphanumeric() || cc == '_' {
+                    word.push(cc);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if keywords.contains(&word.as_str()) {
+                highlighted.push_str("\x1B[1;33m");
+                highlighted.push_str(&word);
+                highlighted.push_str("\x1B[0m");
+            } else if !word.is_empty() && word.chars().next().unwrap().is_uppercase() {
+                highlighted.push_str("\x1B[1;36m");
+                highlighted.push_str(&word);
+                highlighted.push_str("\x1B[0m");
+            } else {
+                highlighted.push_str(&word);
+            }
+        } else {
+            highlighted.push(c);
+            chars.next();
+        }
+    }
+    highlighted
 }

@@ -1,109 +1,180 @@
 /// kinfo — Kernel Info (JUtils)
-/// Similar to uname(1) on Linux, but reads OS identity from /Sys/os-info
-/// as per the JCore File Hierarchy Standard (JFHS).
+/// Similar to uname(1) on Linux, macOS, and Windows.
 ///
 /// Flags:
 ///   -a  --all               Print all fields (same order as uname -a)
-///   -s  --kernel-name       Kernel name        (/Sys/kernel/name)
-///   -n  --nodename          Network node name  (/Sys/kernel/hostname)
-///   -r  --kernel-release    Kernel release     (/Sys/kernel/release)
-///   -v  --kernel-version    Kernel version     (/Sys/kernel/version)
-///   -m  --machine           Machine hardware   (/Sys/kernel/arch)
-///   -p  --processor         Processor type     (/Sys/smp/cpu0 → cpu type)
-///   -i  --hardware-platform Hardware platform  (/Sys/kernel/platform)
-///   -o  --operating-system  Operating system   (/Sys/os-info)
+///   -s  --kernel-name       Kernel name
+///   -n  --nodename          Network node name
+///   -r  --kernel-release    Kernel release
+///   -v  --kernel-version    Kernel version
+///   -m  --machine           Machine hardware
+///   -p  --processor         Processor type
+///   -i  --hardware-platform Hardware platform
+///   -o  --operating-system  Operating system
 
 use std::fs;
-
-// ── JFHS paths ────────────────────────────────────────────────────────────────
-const SYS_KERNEL_NAME:     &str = "/Sys/kernel/name";
-const SYS_KERNEL_HOSTNAME: &str = "/Sys/kernel/hostname";
-const SYS_KERNEL_RELEASE:  &str = "/Sys/kernel/release";
-const SYS_KERNEL_VERSION:  &str = "/Sys/kernel/version";
-const SYS_KERNEL_ARCH:     &str = "/Sys/kernel/arch";
-const SYS_KERNEL_PLATFORM: &str = "/Sys/kernel/platform";
-const SYS_CPU0:            &str = "/Sys/smp/cpu0";
-const SYS_OS_INFO:         &str = "/Sys/os-info";
-
-// ── Linux /proc fallbacks (used during host-Linux development) ────────────────
-const PROC_OSTYPE:   &str = "/proc/sys/kernel/ostype";
-const PROC_HOSTNAME: &str = "/proc/sys/kernel/hostname";
-const PROC_RELEASE:  &str = "/proc/sys/kernel/osrelease";
-const PROC_VERSION:  &str = "/proc/sys/kernel/version";
-const PROC_CPUINFO:  &str = "/proc/cpuinfo";
+use std::process::Command;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Read a one-line virtual file, trim whitespace.
-fn read_sys(path: &str) -> Option<String> {
-    fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// Try JFHS path first, then Linux fallback, then a hard-coded default.
-fn read_or(jfhs: &str, fallback: &str, default: &str) -> String {
-    read_sys(jfhs)
-        .or_else(|| read_sys(fallback))
-        .unwrap_or_else(|| default.to_string())
+/// Helper to execute a system command and return trimmed output.
+fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(cmd).args(args).output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
 }
 
 // ── Individual field readers ──────────────────────────────────────────────────
 
 fn kernel_name() -> String {
-    read_or(SYS_KERNEL_NAME, PROC_OSTYPE, "JCore")
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_to_string("/proc/sys/kernel/ostype")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "Linux".to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "Darwin".to_string()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Windows_NT".to_string()
+    }
 }
 
 fn nodename() -> String {
-    read_or(SYS_KERNEL_HOSTNAME, PROC_HOSTNAME, "unknown")
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("COMPUTERNAME")
+            .unwrap_or_else(|_| "unknown".to_string())
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        if let Ok(name) = fs::read_to_string("/proc/sys/kernel/hostname") {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        run_cmd("hostname", &[])
+            .unwrap_or_else(|| "unknown".to_string())
+    }
 }
 
 fn kernel_release() -> String {
-    read_or(SYS_KERNEL_RELEASE, PROC_RELEASE, "unknown")
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_to_string("/proc/sys/kernel/osrelease")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        run_cmd("sysctl", &["-n", "kern.osrelease"])
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(ver) = run_cmd("cmd", &["/c", "ver"]) {
+            return ver;
+        }
+        "unknown".to_string()
+    }
 }
 
 fn kernel_version() -> String {
-    read_or(SYS_KERNEL_VERSION, PROC_VERSION, "unknown")
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_to_string("/proc/sys/kernel/version")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        run_cmd("sysctl", &["-n", "kern.version"])
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "unknown".to_string()
+    }
 }
 
 fn machine() -> String {
-    read_sys(SYS_KERNEL_ARCH)
-        .unwrap_or_else(|| std::env::consts::ARCH.to_string())
+    std::env::consts::ARCH.to_string()
 }
 
 fn processor() -> String {
-    // JFHS: /Sys/smp/cpu0 contains lines like "vendor_id: JCore"
-    if let Some(content) = read_sys(SYS_CPU0) {
-        for line in content.lines() {
-            if line.starts_with("vendor_id") {
-                if let Some(val) = line.split(':').nth(1) {
-                    return val.trim().to_string();
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = fs::read_to_string("/proc/cpuinfo") {
+            for line in content.lines() {
+                if line.starts_with("model name") {
+                    if let Some(val) = line.split(':').nth(1) {
+                        return val.trim().to_string();
+                    }
                 }
             }
         }
+        "unknown".to_string()
     }
-    // Linux fallback: /proc/cpuinfo "model name"
-    if let Ok(content) = fs::read_to_string(PROC_CPUINFO) {
-        for line in content.lines() {
-            if line.starts_with("model name") {
-                if let Some(val) = line.split(':').nth(1) {
-                    return val.trim().to_string();
-                }
-            }
-        }
+    #[cfg(target_os = "macos")]
+    {
+        run_cmd("sysctl", &["-n", "machdep.cpu.brand_string"])
+            .unwrap_or_else(|| "unknown".to_string())
     }
-    "unknown".to_string()
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("PROCESSOR_IDENTIFIER")
+            .unwrap_or_else(|_| "unknown".to_string())
+    }
 }
 
 fn hardware_platform() -> String {
-    read_sys(SYS_KERNEL_PLATFORM)
-        .unwrap_or_else(|| std::env::consts::ARCH.to_string())
+    std::env::consts::ARCH.to_string()
 }
 
-/// Operating system — reads /Sys/os-info (JFHS), falls back to "Corix".
+/// Parse /etc/os-release to get a pretty OS name on Linux hosts.
+#[cfg(target_os = "linux")]
+fn parse_os_release() -> Option<String> {
+    let content = fs::read_to_string("/etc/os-release").ok()?;
+    let mut name = None;
+    for line in content.lines() {
+        if line.starts_with("PRETTY_NAME=") {
+            let val = line.strip_prefix("PRETTY_NAME=")?;
+            return Some(val.trim_matches('"').trim_matches('\'').to_string());
+        } else if line.starts_with("NAME=") {
+            let val = line.strip_prefix("NAME=")?;
+            name = Some(val.trim_matches('"').trim_matches('\'').to_string());
+        }
+    }
+    name
+}
+
 fn operating_system() -> String {
-    read_sys(SYS_OS_INFO).unwrap_or_else(|| "Corix".to_string())
+    #[cfg(target_os = "linux")]
+    {
+        parse_os_release().unwrap_or_else(|| "GNU/Linux".to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(ver) = run_cmd("sw_vers", &["-productVersion"]) {
+            format!("macOS {}", ver)
+        } else {
+            "macOS".to_string()
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Windows".to_string()
+    }
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -122,7 +193,7 @@ fn print_help(prog: &str) {
     println!("  -m, --machine            Print the machine hardware name");
     println!("  -p, --processor          Print the processor type");
     println!("  -i, --hardware-platform  Print the hardware platform");
-    println!("  -o, --operating-system   Print the operating system (reads /Sys/os-info)");
+    println!("  -o, --operating-system   Print the operating system");
     println!("      --help               Show this help and exit");
     println!("      --version            Show version information and exit");
 }
@@ -190,7 +261,7 @@ fn main() {
             "--operating-system"  => flags.operating_system   = true,
 
             // Short flags — may be combined: -snrvm etc.
-            s if s.starts_with('-') && !s.starts_with("--") => {
+            s if s.starts_with('-') && s.len() > 1 && !s.starts_with("--") => {
                 for ch in s.chars().skip(1) {
                     match ch {
                         'a' => flags.enable_all(),

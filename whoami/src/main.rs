@@ -2,6 +2,25 @@ fn print_usage() {
     eprintln!("Usage: {}", std::env::args().nth(0).unwrap_or_else(|| "whoami".into()));
 }
 
+fn get_username() -> String {
+    #[cfg(unix)]
+    {
+        unsafe {
+            let uid = libc::geteuid();
+            let pwd = libc::getpwuid(uid);
+            if !pwd.is_null() {
+                if let Ok(name) = std::ffi::CStr::from_ptr((*pwd).pw_name).to_str() {
+                    return name.to_string();
+                }
+            }
+        }
+    }
+
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "unknown".into())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -24,6 +43,5 @@ fn main() {
         std::process::exit(1);
     }
 
-    let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "unknown".into());
-    println!("{}", user);
+    println!("{}", get_username());
 }

@@ -27,7 +27,7 @@ fn main() {
         ).ok();
 
         // 1. Header (Retro-Futuristic Glassmorphism Vibe)
-        println!("{}", " ── JeffNix System Monitor (jtop) ──────────────────────────────── ".bold().cyan());
+        println!("{}", " ── JUtils System Monitor (jtop) ──────────────────────────────── ".bold().cyan());
         
         // Hostname, Uptime & CPU load
         let uptime = System::uptime();

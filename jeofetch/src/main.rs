@@ -61,46 +61,67 @@ const UBUNTU_LOGO: &[&str] = &[
 
 /// Zorin OS logo.
 const ZORIN_LOGO: &[&str] = &[
-    r"    .-----------.",
-    r"   /  ZZZZZZZZ   \",
-    r"  |  Z       Z   |",
-    r"  |  Z       Z   |",
-    r"  |  Z      Z    |",
-    r"  |  Z     Z     |",
-    r"  |  Z    Z      |",
-    r"  |  Z   Z       |",
-    r"  |  Z  Z        |",
-    r"  |  Z Z         |",
-    r"  |  ZZ          |",
-    r"  |  Z           |",
-    r"   \             /",
-    r"    '-----------'",
+    r"        `osssssssssssssssssssso`",
+    r"       .osssssssssssssssssssssso.",
+    r"      .+oooooooooooooooooooooooo+.",
+    r"",
+    r"",
+    r"  `::::::::::::::::::::::.         .:`",
+    r" `+ssssssssssssssssss+:.`     `.:+ssso`",
+    r".ossssssssssssssso/.       `-+ossssssso.",
+    r" :ossssssssssso/-`      `-/osssssssssss:",
+    r"  `:osssssssssss+:.`   .:/osssssssssso:`",
+    r"   `.+ssssssssssssssso/.`      -/osssso.",
+    r"      +ssssssssssssssssso+++++++++ssss+.",
+    r"",
+    r"",
+    r"      +sssssssssssssssssssssssssssss+",
+    r"       -osssssssssssssssssssssssso-",
+    r"         `:+ossssssssssssssso+:`",
 ];
 
 
 /// Debian logo.
 const DEBIAN_LOGO: &[&str] = &[
-    r"        _,met$$$$$gg.",
-    r"     ,g$$$$$$$$$$$$$$$P.",
-    r#"   ,g$$P""       """Y$$"."#,
-    r"  ,$$P'              `$$$.",
+    r"       _,met$$$$$gg.",
+    r"    ,g$$$$$$$$$$$$$$$P.",
+    r#"  ,g$$P"     """Y$$.".  "#,
+    r" ,$$P'              `$$$.",
     r"',$$P       ,ggs.     `$$b:",
-    r#"`d$'     ,$P\"'   .    $$$"#,
+    r#"`d$$'     ,$P"'   .    $$$"#,
     r" $$P      d$'     ,    $$P",
     r" $$:      $$.   -    ,d$$'",
     r" $$;      Y$b._   _,d$P'",
-    r#" Y$$.    `.`\"Y$$$$P\"'"#,
-    r#" `$$b      \"-.__"#,
+    r#" Y$$.    `.`"Y$$$$P"'"#,
+    r#" `$$b      "-.__"#,
     r"  `Y$$",
-    r"   `Y$$",
-    r"    `Y$$",
-    r"     `$$b",
-    r"      `Y$$",
-    r"       `Y$$",
-    r"        `$$",
-    r"         `$",
+    r"   `Y$$.",
+    r"     `$$b.",
+    r"       `Y$$b.",
+    r#"          `"Y$b._"#,
+    r#"              `"""  "#,
 ];
 
+
+/// Alinix logo: two cherries (right one bitten) with a leaf, rasterized from
+/// assets/logo.svg using half-block characters.
+const ALINIX_LOGO: &[&str] = &[
+    r"          ▄   ▄▄▄▄▄",
+    r"          ███████████▄",
+    r"          █▀▀▀▀▀▀▀▀▀▀",
+    r"          ██▄▄████▄▄",
+    r"         ▄████████████▄",
+    r"        ▄███████████▀",
+    r"       ▄████████████",
+    r"        ███████████▄",
+    r"  ▄█████████████████▄",
+    r"▄█████████████████████",
+    r"████████████████████▀",
+    r"█████████████  ▀▀",
+    r"▀███████████▀",
+    r" ▀████████▀",
+    r"    ▀▀▀▀",
+];
 
 /// A logo together with the brand color it should be rendered in.
 struct Logo {
@@ -133,6 +154,10 @@ fn distro_id() -> String {
 /// the OS/distro is not recognized.
 fn select_logo() -> Logo {
     match distro_id().as_str() {
+        "alinix" => Logo {
+            lines: ALINIX_LOGO,
+            color: Color::Magenta,
+        },
         "arch" | "archlinux" | "manjaro" | "endeavouros" | "artix" => Logo {
             lines: ARCH_LOGO,
             color: Color::Cyan,
@@ -172,73 +197,83 @@ fn select_logo() -> Logo {
 
 /// Fedora logo.
 const FEDORA_LOGO: &[&str] = &[
-    r"           /:-------------:\",
-    r"        :-------------------::",
-    r"      :-----------/shhOHbmp---:",
-    r"    /-----------omMMMNNNMMD  ---:",
-    r"   :-----------sMMMMNMNMP.    ---:",
+    r"          /:-------------:\",
+    r"       :-------------------::",
+    r"     :-----------/shhOHbmp---:\",
+    r"   /-----------omMMMNNNMMD  ---:",
+    r"  :-----------sMMMMNMNMP.    ---:",
     r"  :-----------:MMMdP-------    ---\",
-    r" ,------------:MMMd--------    ---\",
-    r" :-----------:MMMd-------    -----\",
-    r" :---------oNMMMMMP------      ---\",
-    r" :-------dMMMMMMMMP-----       ---\",
-    r" :------:sdNMMMNMP-------      ---\",
-    r" :-----:sdNMMMNMP-------       ---\",
-    r" :----:sdNMMMNMP--------      ---\",
-    r" :---:sdNMMMNMP---------      ---\",
-    r" :--:sdNMMMNMP-----------     ---\",
-    r" :--:sdNMMMNMP-----------    ---\",
-    r" :-+MMMMMNMP-------------    ---\",
-    r"  .+MMMMMNMP-------------    --\",
-    r"    .+MMMMMNMP-----------    --\",
-    r"      `:://:--------------`--\",
+    r" ,------------:MMMd--------    ---:",
+    r" :------------:MMMd-------    .---:",
+    r" :----    oNMMMMMMMMMNho     .----:",
+    r" :--     .+shhhMMMmhhy++   .------/",
+    r" :-    -------:MMMd--------------:",
+    r" :-   --------/MMMd-------------;",
+    r" :-    ------/hMMMy------------:",
+    r" :-- :dMNdhhdNMMNo------------;",
+    r" :---:sdNMMMMNds:------------:",
+    r" :------:://:-------------::",
+    r" :---------------------://",
 ];
 
-/// Generic Linux penguin logo (fallback for unrecognized Linux distros).
+/// Generic Linux penguin logo (Tux, fallback for unrecognized Linux distros).
 const LINUX_LOGO: &[&str] = &[
-    r"       .NNNNNNN.",
-    r"      .NNNNNNNNN.",
-    r"      NNNNNNNNNN.",
-    r"      NNNNNNNNNN.",
-    r"      `NNNNNNNNN'",
-    r"       `NNNNNNN'",
-    r"        `NNNNN'",
-    r"         `NNN'",
-    r"          `N'",
+    r"        #####",
+    r"       #######",
+    r"       ##O#O##",
+    r"       #######",
+    r"     ###########",
+    r"    #############",
+    r"   ###############",
+    r"   ################",
+    r"  #################",
+    r"###################",
+    r"#### ########### ####",
+    r"####  #########  ####",
+    r"###    #######    ###",
+    r"##      #####      ##",
 ];
 
 /// macOS logo.
 const MACOS_LOGO: &[&str] = &[
-    r"                 `:;;;,`",
-    r"       ;;;;;;;;;;;;",
-    r"    :;;;;;;;;;;;;;;;:",
-    r"  ;;:;;:;;;;;;;;;;;;;;:;;",
-    r"    ;; ;;;;;;;;;;;;;;;;",
-    r"       :;;;;;;;;;;;;;;;",
-    r"   ;;;;;;;;;;;;;;;;;;;;",
-    r"  ;; ;;;;;;;;;;;;;;;;;",
-    r"     :;;;;;;;;;;;;;;;;",
-    r"        ;;;;;;;;;;;;;;",
-    r"          ;;;;;;;;;;",
-    r"            :;;;;;",
+    r"                    'c.",
+    r"                 ,xNMM.",
+    r"               .OMMMMo",
+    r"               OMMM0,",
+    r"     .;loddo:' loolloddol;.",
+    r"   cKMMMMMMMMMMNWMMMMMMMMMM0:",
+    r" .KMMMMMMMMMMMMMMMMMMMMMMMWd.",
+    r" XMMMMMMMMMMMMMMMMMMMMMMMX.",
+    r";MMMMMMMMMMMMMMMMMMMMMMMM:",
+    r":MMMMMMMMMMMMMMMMMMMMMMMM:",
+    r".MMMMMMMMMMMMMMMMMMMMMMMMX.",
+    r" kMMMMMMMMMMMMMMMMMMMMMMMMWd.",
+    r" .XMMMMMMMMMMMMMMMMMMMMMMMMMMk",
+    r"  .XMMMMMMMMMMMMMMMMMMMMMMMMK.",
+    r"    kMMMMMMMMMMMMMMMMMMMMMMd",
+    r"     ;KMMMMMMMWXXWMMMMMMMk.",
+    r"       .cooc,.    .,coo:.",
 ];
 
 /// Windows logo.
 const WINDOWS_LOGO: &[&str] = &[
-    r"           ,.=:!!t3Z3z.,",
-    r"          :tt:::tt333EE3",
-    r"         Et:::ztt33EEEL @Ee.,..,",
-    r"        ;tt:::tt333EE7 ;EEEEEEttt:::tEe.",
-    r"       :Et:::zt333EEQ. $EEEEEtttt:::t33.",
-    r"      :t0:::tt333EEF @EEEEEEttttt:::t#;",
-    r"      :t0:::tt333EEF ;EEEEEEttttt:::t#;",
-    r"      :t0:::tt333EEF ;EEEEEEttttt:::t#;",
-    r"      :t0:::tt333EEF ;EEEEEEttttt:::t#;",
-    r"       :0t:::tt333EEF ;EEEEEEttttt::te",
-    r"        '0t:::tt333EEF ;EEEEEEttttt::t",
-    r"         '0t:::tt333EEF ;EEEEEEttttt::t",
-    r"          '0t:::tt333EEF ;EEEEEEttttt::t",
-    r"           '0t:::tt333EEF ;EEEEEEttttt::t",
+    r"        ,.=:!!t3Z3z.,",
+    r"       :tt:::tt333EE3",
+    r"       Et:::ztt33EEEL @Ee.,..,",
+    r"      ;tt:::tt333EE7 ;EEEEEEttttt33#",
+    r"     :Et:::zt333EEQ. $EEEEEttttt33QL",
+    r"     it::::tt333EEF @EEEEEEttttt33F",
+    r#"    ;3=*^```"*4EEV :EEEEEEttttt33@."#,
+    r"    ,.=::::it=., ` @EEEEEEtttz33QF",
+    r#"   ;::::::::zt33)   "4EEEtttji3P*"#,
+    r"  :t::::::::tt33.:Z3z..  `` ,..g.",
+    r"  i::::::::zt33F AEEEtttt::::ztF",
+    r" ;:::::::::t33V ;EEEEEEttttt33f",
+    r" E::::::::zt33L @EEEEEEtttt33F",
+    r#"{3=*^```"*4E3) ;EEEEEEttttt33f"#,
+    r"             `  :EEEEEEttttt33F",
+    r#"                 "4EEEEEEtttt33f"#,
+    r#"                    "*4EEETss""#,
 ];
 
 fn main() {
@@ -256,7 +291,21 @@ fn run_jeofetch() {
     let up_mins = (uptime_sec % 3600) / 60;
     let hostname = System::host_name().unwrap_or_else(|| "localhost".to_string());
     let user = env::var("USER").unwrap_or_else(|_| "user".to_string());
-    let shell = "jsh";
+    
+    let shell_path = env::var("SHELL").unwrap_or_else(|_| {
+        #[cfg(target_os = "windows")]
+        {
+            env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "sh".to_string()
+        }
+    });
+    let shell = std::path::Path::new(&shell_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(&shell_path);
 
     let cpu = sys
         .cpus()
