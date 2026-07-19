@@ -32,11 +32,11 @@ fn main() {
                 // Get groups for the current process
                 let ngroups = libc::getgroups(0, std::ptr::null_mut());
                 if ngroups >= 0 {
-                    let mut groups = vec![0; ngroups as usize];
+                    let mut groups: Vec<libc::gid_t> = vec![0; ngroups as usize];
                     if libc::getgroups(ngroups, groups.as_mut_ptr()) >= 0 {
                         let mut group_names = Vec::new();
                         for g in groups {
-                            let gr = libc::getgrgid(g);
+                            let gr = libc::getgrgid(g as libc::gid_t);
                             if !gr.is_null() {
                                 let name = CStr::from_ptr((*gr).gr_name).to_string_lossy().into_owned();
                                 group_names.push(name);
@@ -66,17 +66,22 @@ fn main() {
                 let primary_gid = (*pwd).pw_gid;
 
                 let mut ngroups = 100;
-                let mut groups = vec![0; ngroups as usize];
-                let res = libc::getgrouplist(username_c.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups);
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
+                type GroupListT = i32;
+                #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+                type GroupListT = libc::gid_t;
+
+                let mut groups: Vec<GroupListT> = vec![0; ngroups as usize];
+                let res = libc::getgrouplist(username_c.as_ptr(), primary_gid as GroupListT, groups.as_mut_ptr(), &mut ngroups);
                 if res < 0 {
                     groups.resize(ngroups as usize, 0);
-                    libc::getgrouplist(username_c.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups);
+                    libc::getgrouplist(username_c.as_ptr(), primary_gid as GroupListT, groups.as_mut_ptr(), &mut ngroups);
                 }
 
                 groups.truncate(ngroups as usize);
                 let mut group_names = Vec::new();
                 for g in groups {
-                    let gr = libc::getgrgid(g);
+                    let gr = libc::getgrgid(g as libc::gid_t);
                     if !gr.is_null() {
                         let name = CStr::from_ptr((*gr).gr_name).to_string_lossy().into_owned();
                         group_names.push(name);

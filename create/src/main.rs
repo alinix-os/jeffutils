@@ -1,6 +1,3 @@
-#![feature(io_error_more)]
-#![feature(io_error_inprogress)]
-#![feature(io_error_too_many_open_files)]
 
 pub mod dir;
 pub mod file;

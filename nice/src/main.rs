@@ -12,6 +12,16 @@ fn print_usage() {
     eprintln!("      --version        exibe a versão e sai");
 }
 
+#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "ios"))]
+unsafe fn clear_errno() { *libc::__error() = 0; }
+#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "ios"))]
+unsafe fn get_errno() -> i32 { *libc::__error() }
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+unsafe fn clear_errno() { *libc::__errno_location() = 0; }
+#[cfg(any(target_os = "linux", target_os = "android"))]
+unsafe fn get_errno() -> i32 { *libc::__errno_location() }
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
@@ -68,9 +78,9 @@ fn main() {
         #[cfg(unix)]
         {
             unsafe {
-                *libc::__errno_location() = 0;
+                clear_errno();
                 let prio = libc::getpriority(libc::PRIO_PROCESS, 0);
-                let errno = *libc::__errno_location();
+                let errno = get_errno();
                 if prio == -1 && errno != 0 {
                     eprintln!("nice: não foi possível obter a prioridade atual: {}", std::io::Error::last_os_error());
                     std::process::exit(1);
@@ -94,9 +104,9 @@ fn main() {
     #[cfg(unix)]
     {
         unsafe {
-            *libc::__errno_location() = 0;
+            clear_errno();
             let current = libc::getpriority(libc::PRIO_PROCESS, 0);
-            let errno = *libc::__errno_location();
+            let errno = get_errno();
             if !(current == -1 && errno != 0) {
                 let target = (current + adjustment).max(-20).min(19);
                 if libc::setpriority(libc::PRIO_PROCESS, 0, target) == -1 {

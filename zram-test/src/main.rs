@@ -10,7 +10,6 @@ fn read_zram_stat(dev: &str, field: &str) -> Option<u64> {
     std::fs::read_to_string(&path).ok().and_then(|s| s.trim().parse().ok())
 }
 
-#[cfg(target_os = "linux")]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
