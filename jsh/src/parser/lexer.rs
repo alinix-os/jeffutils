@@ -88,6 +88,10 @@ impl<'a> Lexer<'a> {
                         self.tokens.push(Token::Background);
                     }
                 }
+                '\n' => {
+                    self.chars.next();
+                    self.tokens.push(Token::Semi);
+                }
                 ';' => {
                     self.chars.next();
                     self.tokens.push(Token::Semi);
@@ -177,7 +181,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_spaces(&mut self) {
-        while matches!(self.chars.peek(), Some(c) if c.is_whitespace()) {
+        while matches!(self.chars.peek(), Some(c) if c.is_whitespace() && *c != '\n') {
             self.chars.next();
         }
     }

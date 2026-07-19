@@ -77,6 +77,14 @@ fn main() {
                 eprintln!("tail: invalid number of lines: '{}'", val);
                 std::process::exit(1);
             }
+        } else if args[i].starts_with('-') && args[i].len() > 1 && args[i][1..].chars().all(|c| c.is_ascii_digit()) {
+            let val = &args[i][1..];
+            if let Ok(n) = val.parse::<usize>() {
+                num_lines = n;
+            } else {
+                eprintln!("tail: invalid number of lines: '{}'", val);
+                std::process::exit(1);
+            }
         } else {
             files.push(args[i].clone());
         }
