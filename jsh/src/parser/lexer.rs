@@ -54,8 +54,13 @@ impl<'a> Lexer<'a> {
             match c {
                 '#' => {
                     // Comment: skip to end of line.
-                    while self.chars.next().is_some() {}
-                    break;
+                    while let Some(&c) = self.chars.peek() {
+                        if c == '\n' {
+                            break;
+                        }
+                        self.chars.next();
+                    }
+                    continue;
                 }
                 '|' => {
                     self.chars.next();

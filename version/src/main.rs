@@ -1,3 +1,3 @@
 fn main() {
-    println!("JeffUtils v1.0.0");
+    println!("JeffUtils v{}", env!("CARGO_PKG_VERSION"));
 }

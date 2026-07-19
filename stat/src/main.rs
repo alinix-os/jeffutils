@@ -39,14 +39,14 @@ fn main() {
     }
     match fs::metadata(path) {
         Ok(meta) => {
-            println!("  Arquivo: {}", path_str);
-            println!("  Tamanho: {} bytes", meta.len());
-            println!("  Tipo: {}", if meta.is_dir() { "Diretório" } else if meta.is_file() { "Arquivo Regular" } else { "Link/Outro" });
+            println!("  Arquivo : {}", path_str);
+            println!("  Tamanho : {} bytes", meta.len());
+            println!("  Tipo    : {}", if meta.is_dir() { "Diretório" } else if meta.is_file() { "Arquivo Regular" } else { "Link/Outro" });
             if let Ok(modified) = meta.modified() {
                 println!("Modificado: {:?}", modified);
             }
             if let Ok(accessed) = meta.accessed() {
-                println!(" Acessado: {:?}", accessed);
+                println!(" Acessado : {:?}", accessed);
             }
             #[cfg(unix)]
             {
@@ -65,12 +65,24 @@ fn main() {
 fn format_mode(mode: u32) -> String {
     let r  = if mode & 0o400 != 0 { "r" } else { "-" };
     let w  = if mode & 0o200 != 0 { "w" } else { "-" };
-    let x  = if mode & 0o100 != 0 { "x" } else { "-" };
+    let x  = if mode & 0o100 != 0 {
+        if mode & 0o4000 != 0 { "s" } else { "x" }
+    } else {
+        if mode & 0o4000 != 0 { "S" } else { "-" }
+    };
     let r2 = if mode & 0o040 != 0 { "r" } else { "-" };
     let w2 = if mode & 0o020 != 0 { "w" } else { "-" };
-    let x2 = if mode & 0o010 != 0 { "x" } else { "-" };
+    let x2 = if mode & 0o010 != 0 {
+        if mode & 0o2000 != 0 { "s" } else { "x" }
+    } else {
+        if mode & 0o2000 != 0 { "S" } else { "-" }
+    };
     let r3 = if mode & 0o004 != 0 { "r" } else { "-" };
     let w3 = if mode & 0o002 != 0 { "w" } else { "-" };
-    let x3 = if mode & 0o001 != 0 { "x" } else { "-" };
+    let x3 = if mode & 0o001 != 0 {
+        if mode & 0o1000 != 0 { "t" } else { "x" }
+    } else {
+        if mode & 0o1000 != 0 { "T" } else { "-" }
+    };
     format!("{}{}{}{}{}{}{}{}{}", r, w, x, r2, w2, x2, r3, w3, x3)
 }

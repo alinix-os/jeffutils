@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::ErrorKind;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 fn describe_error(kind: ErrorKind) -> &'static str {
@@ -11,7 +13,7 @@ fn describe_error(kind: ErrorKind) -> &'static str {
     }
 }
 
-fn find_files<P: AsRef<Path>>(dir: P, pattern: &str, exact: bool, max_depth: Option<usize>, case_sensitive: bool, current_depth: usize) {
+fn find_files<P: AsRef<Path>>(dir: P, pattern: &str, exact: bool, max_depth: Option<usize>, case_sensitive: bool, current_depth: usize, visited: &mut HashSet<(u64, u64)>) {
     if let Some(max) = max_depth {
         if current_depth > max {
             return;
@@ -51,7 +53,13 @@ fn find_files<P: AsRef<Path>>(dir: P, pattern: &str, exact: bool, max_depth: Opt
         }
 
         if path.is_dir() {
-            find_files(&path, pattern, exact, max_depth, case_sensitive, current_depth + 1);
+            if let Ok(meta) = path.metadata() {
+                let key = (meta.dev(), meta.ino());
+                if !visited.insert(key) {
+                    continue;
+                }
+            }
+            find_files(&path, pattern, exact, max_depth, case_sensitive, current_depth + 1, visited);
         }
     }
 }
@@ -95,9 +103,11 @@ fn main() {
             "-i" | "--ignore-case" => case_sensitive = false,
             "-d" | "--max-depth" => {
                 i += 1;
-                if i < args.len() {
-                    max_depth = args[i].parse().ok();
+                if i >= args.len() {
+                    eprintln!("Error: --max-depth requires a value");
+                    std::process::exit(1);
                 }
+                max_depth = args[i].parse().ok();
             }
             _ => {
                 if pattern.is_empty() {
@@ -121,5 +131,5 @@ fn main() {
         std::process::exit(1);
     }
 
-    find_files(path, &pattern, exact, max_depth, case_sensitive, 0);
+    find_files(path, &pattern, exact, max_depth, case_sensitive, 0, &mut HashSet::new());
 }

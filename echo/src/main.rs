@@ -74,6 +74,36 @@ fn interpret_escapes(s: &str) -> String {
                 Some('r') => { res.push('\r'); chars.next(); }
                 Some('t') => { res.push('\t'); chars.next(); }
                 Some('v') => { res.push('\x0B'); chars.next(); }
+                Some('0') => {
+                    chars.next();
+                    let mut octal = String::new();
+                    for _ in 0..3 {
+                        if let Some(&oc) = chars.peek() {
+                            if oc.is_ascii_digit() && oc < '8' {
+                                octal.push(oc);
+                                chars.next();
+                            } else { break; }
+                        }
+                    }
+                    if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+                        res.push(byte as char);
+                    }
+                }
+                Some('x') => {
+                    chars.next();
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&hc) = chars.peek() {
+                            if hc.is_ascii_hexdigit() {
+                                hex.push(hc);
+                                chars.next();
+                            } else { break; }
+                        }
+                    }
+                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                        res.push(byte as char);
+                    }
+                }
                 _ => res.push('\\'),
             }
         } else {

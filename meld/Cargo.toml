@@ -1,0 +1,8 @@
+[package]
+name = "meld"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "meld"
+path = "src/main.rs"

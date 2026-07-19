@@ -3,6 +3,7 @@ use std::fs;
 use std::process::Command;
 use std::env;
 use std::io::{self, Write, BufRead};
+use std::io::IsTerminal;
 use std::collections::HashMap;
 
 struct CleanStats {
@@ -618,7 +619,8 @@ fn main() {
 
     // Interactive unless -y was passed or we have no TTY isn't checked here;
     // -y forces non-interactive skip-in-use behavior.
-    let mut inuse = InUseController::new(!non_interactive && !dry_run);
+    let has_tty = std::io::stdin().is_terminal();
+    let mut inuse = InUseController::new(!non_interactive && !dry_run && has_tty);
 
     let mut total_stats = CleanStats::new();
     let mut targets: Vec<(String, PathBuf)> = Vec::new();

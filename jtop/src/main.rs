@@ -1,10 +1,10 @@
 use std::io::{self, Write};
 use std::time::Duration;
-use sysinfo::{System, CpuRefreshKind, ProcessRefreshKind};
+use sysinfo::System;
 use crossterm::{
     execute,
     terminal::{Clear, ClearType, size},
-    style::{Color, Stylize, Print, ResetColor, SetForegroundColor},
+    style::Stylize,
     cursor::MoveTo,
 };
 
@@ -17,7 +17,7 @@ fn main() {
         // Refresh system metrics
         sys.refresh_all();
         
-        let (width, height) = size().unwrap_or((80, 24));
+        let (_width, height) = size().unwrap_or((80, 24));
         
         // Clear screen and move cursor to home position
         execute!(

@@ -1,0 +1,8 @@
+[package]
+name = "stitch"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "stitch"
+path = "src/main.rs"

@@ -1,0 +1,8 @@
+[package]
+name = "primegen"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "primegen"
+path = "src/main.rs"

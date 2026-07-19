@@ -56,6 +56,8 @@ impl Shell {
     /// Set a variable in shell state and in the process environment.
     pub fn set_var(&mut self, name: &str, value: &str) {
         self.vars.insert(name.to_string(), value.to_string());
+        // SAFETY: set_var is only called from the main thread; background jobs
+        // clone the Shell so they never share mutable env state.
         unsafe {
             std::env::set_var(name, value);
         }
@@ -65,6 +67,7 @@ impl Shell {
     pub fn unset_var(&mut self, name: &str) {
         self.vars.remove(name);
         self.exported.remove(name);
+        // SAFETY: remove_var is only called from the main thread.
         unsafe {
             std::env::remove_var(name);
         }
@@ -74,6 +77,8 @@ impl Shell {
     pub fn mark_exported(&mut self, name: &str) {
         self.exported.insert(name.to_string());
         if let Some(v) = self.vars.get(name) {
+            // SAFETY: set_var is only called from the main thread; background jobs
+            // clone the Shell so they never share mutable env state.
             unsafe {
                 std::env::set_var(name, v);
             }

@@ -27,14 +27,47 @@ fn get_system_dns() -> Vec<String> {
     dns_servers
 }
 
+fn validate_dns_arg(arg: &str) -> Result<(), String> {
+    if arg.is_empty() {
+        return Err("DNS server argument is empty".into());
+    }
+    if arg.contains(char::is_whitespace) {
+        return Err(format!("DNS server argument contains whitespace: '{}'", arg));
+    }
+    Ok(())
+}
+
 fn set_system_dns(d1: &str, d2: Option<&str>) -> Result<(), String> {
+    validate_dns_arg(d1)?;
+    if let Some(sec) = d2 {
+        validate_dns_arg(sec)?;
+    }
     #[cfg(unix)]
     {
         let resolv_path = "/etc/resolv.conf";
-        let mut content = format!("nameserver {}\n", d1);
+        let existing = fs::read_to_string(resolv_path).unwrap_or_default();
+        let mut new_nameservers = vec![format!("nameserver {}", d1)];
         if let Some(sec) = d2 {
-            content.push_str(&format!("nameserver {}\n", sec));
+            new_nameservers.push(format!("nameserver {}", sec));
         }
+        let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+        let mut replaced = 0;
+        for line in &mut lines {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("nameserver") {
+                if replaced < new_nameservers.len() {
+                    *line = new_nameservers[replaced].clone();
+                    replaced += 1;
+                }
+            }
+        }
+        if replaced < new_nameservers.len() {
+            for extra in &new_nameservers[replaced..] {
+                lines.push(extra.clone());
+            }
+        }
+        let content: String = lines.join("\n");
+        let content = if content.ends_with('\n') { content } else { format!("{}\n", content) };
         fs::write(resolv_path, content).map_err(|e| format!("Erro ao escrever em {}: {}", resolv_path, e))
     }
     #[cfg(windows)]

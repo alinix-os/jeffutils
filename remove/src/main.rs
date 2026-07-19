@@ -105,7 +105,8 @@ fn main() {
         }
         Risk::Normal => {
             if !force {
-                let prompt = if is_dir {
+                let is_actually_dir = std::path::Path::new(&path).is_dir();
+                let prompt = if is_dir || is_actually_dir {
                     format!("Remove directory '{}'{}?", path, if recursive { " and its contents" } else { "" })
                 } else {
                     format!("Remove file '{}'?", path)

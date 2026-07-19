@@ -95,5 +95,6 @@ fn main() {
         }
     }
 
-    println!("padrao");
+    eprintln!("groups: failed to get groups");
+    std::process::exit(1);
 }

@@ -1,0 +1,8 @@
+[package]
+name = "b2sum"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blake2 = "0.10"
+hex = "0.4"

@@ -1,0 +1,8 @@
+[package]
+name = "dedup"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "dedup"
+path = "src/main.rs"

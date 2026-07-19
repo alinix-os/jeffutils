@@ -4,6 +4,17 @@ use std::time::Instant;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    for arg in &args {
+        if arg == "-h" || arg == "--help" {
+            println!("Usage: time <command> [args...]");
+            println!("Measure the execution time of a command.");
+            return;
+        }
+        if arg == "--version" {
+            println!("time (JeffUtils) 1.0");
+            return;
+        }
+    }
     if args.is_empty() {
         println!("Uso: time <comando> [args...]");
         return;

@@ -103,12 +103,83 @@ fn pwd(out: &mut dyn Write, _err: &mut dyn Write) -> i32 {
     }
 }
 
+fn interpret_escapes(s: &str) -> String {
+    let mut res = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('\\') => { res.push('\\'); chars.next(); }
+                Some('a') => { res.push('\x07'); chars.next(); }
+                Some('b') => { res.push('\x08'); chars.next(); }
+                Some('e') => { res.push('\x1B'); chars.next(); }
+                Some('f') => { res.push('\x0C'); chars.next(); }
+                Some('n') => { res.push('\n'); chars.next(); }
+                Some('r') => { res.push('\r'); chars.next(); }
+                Some('t') => { res.push('\t'); chars.next(); }
+                Some('v') => { res.push('\x0B'); chars.next(); }
+                Some('0') => {
+                    chars.next();
+                    let mut octal = String::new();
+                    for _ in 0..3 {
+                        if let Some(&oc) = chars.peek() {
+                            if oc.is_ascii_digit() && oc < '8' {
+                                octal.push(oc);
+                                chars.next();
+                            } else { break; }
+                        }
+                    }
+                    if let Ok(byte) = u8::from_str_radix(&octal, 8) {
+                        res.push(byte as char);
+                    }
+                }
+                Some('x') => {
+                    chars.next();
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&hc) = chars.peek() {
+                            if hc.is_ascii_hexdigit() {
+                                hex.push(hc);
+                                chars.next();
+                            } else { break; }
+                        }
+                    }
+                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                        res.push(byte as char);
+                    }
+                }
+                _ => res.push('\\'),
+            }
+        } else {
+            res.push(c);
+        }
+    }
+    res
+}
+
 fn echo(args: &[String], out: &mut dyn Write) -> i32 {
     let mut i = 0;
     let mut newline = true;
+    let mut enable_escapes = false;
     while i < args.len() {
         if args[i] == "-n" {
             newline = false;
+            i += 1;
+        } else if args[i] == "-e" {
+            enable_escapes = true;
+            i += 1;
+        } else if args[i] == "-E" {
+            enable_escapes = false;
+            i += 1;
+        } else if args[i].starts_with('-') && args[i].len() > 1 && args[i].bytes().all(|b| b == b'n' || b == b'e' || b == b'E') {
+            for c in args[i].bytes().skip(1) {
+                match c {
+                    b'n' => newline = false,
+                    b'e' => enable_escapes = true,
+                    b'E' => enable_escapes = false,
+                    _ => {}
+                }
+            }
             i += 1;
         } else {
             break;
@@ -116,10 +187,11 @@ fn echo(args: &[String], out: &mut dyn Write) -> i32 {
     }
     let rest = &args[i..];
     let line = rest.join(" ");
+    let output = if enable_escapes { interpret_escapes(&line) } else { line };
     if newline {
-        let _ = writeln!(out, "{line}");
+        let _ = writeln!(out, "{output}");
     } else {
-        let _ = write!(out, "{line}");
+        let _ = write!(out, "{output}");
     }
     0
 }

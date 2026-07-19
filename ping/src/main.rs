@@ -13,6 +13,7 @@ fn main() {
     let addr_str = format!("{}:{}", host, port);
     println!("Pingando {} via TCP na porta {}...", host, port);
     
+    let mut failures = 0;
     match addr_str.to_socket_addrs() {
         Ok(mut addrs) => {
             if let Some(addr) = addrs.next() {
@@ -25,14 +26,24 @@ fn main() {
                         }
                         Err(e) => {
                             println!("Falha ao conectar a {}: sequencia={} erro={}", addr, i, e);
+                            failures += 1;
                         }
                     }
-                    std::thread::sleep(Duration::from_secs(1));
+                    if i < 4 {
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
                 }
             } else {
                 eprintln!("Não foi possível resolver o host: {}", host);
+                std::process::exit(1);
             }
         }
-        Err(e) => eprintln!("Erro de resolução DNS: {}", e),
+        Err(e) => {
+            eprintln!("Erro de resolução DNS: {}", e);
+            std::process::exit(1);
+        }
+    }
+    if failures == 4 {
+        std::process::exit(1);
     }
 }

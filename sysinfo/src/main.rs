@@ -28,7 +28,7 @@ fn get_hostname() -> String {
 fn get_kernel() -> String {
     #[cfg(target_os = "linux")]
     {
-        std::fs::read_to_string("/proc/sys/kernel/ostype")
+        let ostype = std::fs::read_to_string("/proc/sys/kernel/ostype")
             .ok()
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| "Linux".into());
@@ -36,7 +36,7 @@ fn get_kernel() -> String {
             .ok()
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| "unknown".into());
-        format!("Linux {}", release)
+        format!("{} {}", ostype, release)
     }
     #[cfg(target_os = "macos")]
     {

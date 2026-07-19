@@ -9,7 +9,7 @@ pub fn mkdir(path: &str, recursive: bool) {
     };
 
     if let Err(e) = result {
-        println!("{}", describe_error_kind(e.kind(), "Directory already exists"));
+        eprintln!("{}", describe_error_kind(e.kind(), "Directory already exists"));
         std::process::exit(1);
     }
 

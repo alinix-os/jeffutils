@@ -17,13 +17,31 @@ fn describe_error(kind: ErrorKind) -> &'static str {
     }
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| describe_error(e.kind()).to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| describe_error(e.kind()).to_string())? {
+        let entry = entry.map_err(|e| describe_error(e.kind()).to_string())?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).map_err(|e| describe_error(e.kind()).to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn move_item(src: &Path, dst: &Path) -> Result<(), String> {
     fs::rename(src, dst).or_else(|e| {
         if e.kind() == ErrorKind::CrossesDevices {
             if src.is_dir() {
-                return Err("Cannot move directory across devices. Use copy + remove instead.".into());
+                copy_dir_recursive(src, dst)?;
+                fs::remove_dir_all(src).map_err(|e| describe_error(e.kind()).to_string())?;
+                Ok(())
+            } else {
+                fs::copy(src, dst).and_then(|_| fs::remove_file(src)).map_err(|e| describe_error(e.kind()).into())
             }
-            fs::copy(src, dst).and_then(|_| fs::remove_file(src)).map_err(|e| describe_error(e.kind()).into())
         } else {
             Err(describe_error(e.kind()).into())
         }

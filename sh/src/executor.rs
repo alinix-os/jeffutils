@@ -2,8 +2,8 @@
 //!
 //! Supports pipelines, redirections, background jobs, command-scoped
 //! assignments and builtins. Builtins that appear inside a pipeline are
-//! executed in-process and their output is fed to the next stage through a
-//! Unix-domain socket pair, which keeps the implementation dependency-free.
+//! executed in-process and their output is fed to the next stage through
+//! `libc::pipe()` file descriptor pairs.
 
 use crate::ast::{Redir, SimpleCommand};
 use crate::builtins;
@@ -12,7 +12,6 @@ use crate::shell::Shell;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Cursor, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
-use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
 
 /// A command whose words have already been expanded against the current
@@ -104,9 +103,13 @@ fn spawn_external(
     let mut slot: [Option<OwnedFd>; 3] = [None, None, None];
     let mut next_prev: Option<Stdio> = None;
     if make_pipe {
-        let (r, w) = UnixStream::pair()?;
-        next_prev = Some(Stdio::from(OwnedFd::from(r)));
-        slot[1] = Some(OwnedFd::from(w));
+        let mut fds = [0i32; 2];
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } == 0 {
+            let read_fd = unsafe { File::from_raw_fd(fds[0]) };
+            let write_fd = unsafe { File::from_raw_fd(fds[1]) };
+            next_prev = Some(Stdio::from(OwnedFd::from(read_fd)));
+            slot[1] = Some(OwnedFd::from(write_fd));
+        }
     }
 
     for r in &cmd.redirs {
@@ -315,9 +318,12 @@ fn run_multi(shell: &mut Shell, pipeline: &crate::ast::Pipeline) -> i32 {
             last_status = run_builtin_capture(shell, &exp, &mut out_buf, &mut err_buf);
 
             if !is_last {
-                if let Ok((r, mut w)) = UnixStream::pair() {
+                let mut fds = [0i32; 2];
+                if unsafe { libc::pipe(fds.as_mut_ptr()) } == 0 {
+                    let mut w = unsafe { File::from_raw_fd(fds[1]) };
                     let _ = w.write_all(&out_buf);
                     drop(w);
+                    let r = unsafe { File::from_raw_fd(fds[0]) };
                     prev = Some(Stdio::from(OwnedFd::from(r)));
                 }
             } else {
@@ -343,7 +349,11 @@ fn run_multi(shell: &mut Shell, pipeline: &crate::ast::Pipeline) -> i32 {
     }
 
     for mut c in children {
-        let _ = c.wait();
+        if let Ok(status) = c.wait() {
+            if let Some(code) = status.code() {
+                last_status = code;
+            }
+        }
     }
     last_status
 }

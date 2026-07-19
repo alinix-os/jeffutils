@@ -328,20 +328,36 @@ fn main() {
             #[cfg(target_os = "linux")]
             {
                 println!("Disabling all ZRAM devices...");
-                // Deactivate swap first
-                let _ = std::process::Command::new("swapoff").arg("/dev/zram0").status();
-                
-                match write_sysfs("/sys/block/zram0/reset", "1") {
-                    Ok(_) => println!("ZRAM devices disabled and reset"),
-                    Err(e) => {
-                        if e.contains("Permission denied") || e.contains("os error 13") {
-                            eprintln!("Error: Permission denied. Please run this command as root or with sudo.");
-                        } else {
-                            eprintln!("Error: could not disable ZRAM: {}", e);
+                let zram_devices: Vec<String> = std::fs::read_dir("/sys/block/")
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .filter(|name| name.starts_with("zram"))
+                    .collect();
+
+                if zram_devices.is_empty() {
+                    println!("No ZRAM devices found");
+                    return;
+                }
+
+                for dev in &zram_devices {
+                    let dev_path = format!("/dev/{}", dev);
+                    let reset_path = format!("/sys/block/{}/reset", dev);
+                    let _ = std::process::Command::new("swapoff").arg(&dev_path).status();
+                    match write_sysfs(&reset_path, "1") {
+                        Ok(_) => println!("  {} disabled and reset", dev_path),
+                        Err(e) => {
+                            if e.contains("Permission denied") || e.contains("os error 13") {
+                                eprintln!("Error: Permission denied. Please run this command as root or with sudo.");
+                            } else {
+                                eprintln!("Error: could not disable {}: {}", dev_path, e);
+                            }
+                            std::process::exit(1);
                         }
-                        std::process::exit(1);
                     }
                 }
+                println!("ZRAM devices disabled and reset");
             }
             #[cfg(not(target_os = "linux"))]
             {

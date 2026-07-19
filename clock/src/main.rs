@@ -22,63 +22,25 @@ fn save_format(format: &str) {
 }
 
 fn format_now(format: &str) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    let days = secs / 86400;
-    let time_secs = secs % 86400;
-    let hours = time_secs / 3600;
-    let minutes = (time_secs % 3600) / 60;
-    let seconds = time_secs % 60;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let mut now: libc::time_t = 0;
+    unsafe { libc::time(&mut now) };
+    unsafe { libc::localtime_r(&now, &mut tm) };
 
-    let (y, m, d) = days_to_date(days);
     let months = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December",
     ];
 
     format
-        .replace("HH", &format!("{:02}", hours))
-        .replace("mm", &format!("{:02}", minutes))
-        .replace("ss", &format!("{:02}", seconds))
-        .replace("dd", &format!("{:02}", d))
-        .replace("MM", &format!("{:02}", m))
-        .replace("yyyy", &format!("{:04}", y))
-        .replace("Month", months[m as usize - 1])
-        .replace("DD", &format!("{:03}", days_since_year_start(y, m, d)))
-}
-
-fn days_to_date(mut days: u64) -> (u64, u64, u64) {
-    let mut year: u64 = 1970;
-    loop {
-        let ydays = if is_leap(year) { 366 } else { 365 };
-        if days < ydays {
-            break;
-        }
-        days -= ydays;
-        year += 1;
-    }
-    let leap = is_leap(year);
-    let mdays = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month: u64 = 1;
-    for &md in &mdays {
-        if days < md {
-            break;
-        }
-        days -= md;
-        month += 1;
-    }
-    (year, month, days + 1)
-}
-
-fn is_leap(year: u64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-fn days_since_year_start(year: u64, month: u64, day: u64) -> u64 {
-    let mdays = [31, if is_leap(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    mdays[..(month as usize - 1)].iter().sum::<u64>() + day
+        .replace("HH", &format!("{:02}", tm.tm_hour))
+        .replace("mm", &format!("{:02}", tm.tm_min))
+        .replace("ss", &format!("{:02}", tm.tm_sec))
+        .replace("dd", &format!("{:02}", tm.tm_mday))
+        .replace("MM", &format!("{:02}", tm.tm_mon + 1))
+        .replace("yyyy", &format!("{:04}", tm.tm_year + 1900))
+        .replace("Month", months[tm.tm_mon as usize])
+        .replace("DD", &format!("{:03}", tm.tm_yday + 1))
 }
 
 fn print_usage() {

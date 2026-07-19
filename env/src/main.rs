@@ -81,6 +81,18 @@ fn main() {
                 std::process::exit(127);
             }
         };
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            match status.code() {
+                Some(code) => std::process::exit(code),
+                None => {
+                    let signal = status.signal().unwrap_or(1);
+                    std::process::exit(128 + signal);
+                }
+            }
+        }
+        #[cfg(not(unix))]
         std::process::exit(status.code().unwrap_or(0));
     } else {
         if clear_env {

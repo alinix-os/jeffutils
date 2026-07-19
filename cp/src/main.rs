@@ -36,10 +36,16 @@ fn copy_recursive(src: &Path, dst: &Path) -> io::Result<()> {
         fs::create_dir_all(dst)?;
         for entry in fs::read_dir(src)? {
             let entry = entry?;
-            let entry_type = entry.file_type()?;
             let src_path = entry.path();
             let dst_path = dst.join(entry.file_name());
-            if entry_type.is_dir() {
+            let sym_meta = src_path.symlink_metadata()?;
+            if sym_meta.file_type().is_symlink() {
+                let target = fs::read_link(&src_path)?;
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(&target, &dst_path)?;
+                #[cfg(not(unix))]
+                fs::copy(&src_path, &dst_path)?;
+            } else if sym_meta.is_dir() {
                 copy_recursive(&src_path, &dst_path)?;
             } else {
                 copy_file(&src_path, &dst_path)?;
@@ -95,13 +101,16 @@ fn main() {
     } else if src.is_dir() {
         Err(io::Error::new(ErrorKind::IsADirectory, "Source is a directory, use -r to copy recursively"))
     } else {
-        if dst.is_dir() {
-            let filename = src.file_name().unwrap_or_default();
-            copy_file(src, &dst.join(filename))
-        } else {
-            copy_file(src, dst)
-        }
-        .map(|_| ())
+        let filename_result = src.file_name()
+            .filter(|f| !f.is_empty())
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "Source path has no valid file name"));
+        filename_result.and_then(|filename| {
+            if dst.is_dir() {
+                copy_file(src, &dst.join(filename)).map(|_| ())
+            } else {
+                copy_file(src, dst).map(|_| ())
+            }
+        })
     };
 
     match result {

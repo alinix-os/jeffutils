@@ -80,7 +80,6 @@ fn count_reader<R: Read>(mut reader: R) -> io::Result<Counts> {
                 }
 
                 if let Some(error_len) = e.error_len() {
-                    chars += error_len;
                     let next_start = valid_len + error_len;
                     leftover.extend_from_slice(&chunk_bytes[next_start..]);
                 } else {

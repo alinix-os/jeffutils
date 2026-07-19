@@ -31,7 +31,7 @@ fn main() {
 
     let size_mb: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(50);
     let iterations: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
-    let size_bytes = size_mb * 1024 * 1024;
+    let size_bytes = (size_mb as u64) * 1024 * 1024;
 
     println!("ZRAM Benchmark");
     println!("  Size: {} MB", size_mb);
@@ -59,7 +59,7 @@ fn main() {
             let _algo = read_zram_stat(dev, "comp_algorithm").unwrap_or(0);
             let disksize = read_zram_stat(dev, "disksize").unwrap_or(0);
 
-            if disksize < size_bytes as u64 {
+            if disksize < size_bytes {
                 println!("  Warning: device size ({} MB) may be smaller than test size", disksize / 1024 / 1024);
             }
 
@@ -76,7 +76,7 @@ fn main() {
                 let write_time = write_start.elapsed();
                 total_write_time += write_time.as_secs_f64();
 
-                let mut read_buf = vec![0u8; size_bytes];
+                let mut read_buf = vec![0u8; size_bytes as usize];
                 if let Ok(mut f) = std::fs::File::open(format!("/dev/{}", dev)) {
                     use std::io::Read;
                     let read_start = Instant::now();

@@ -12,7 +12,7 @@ pub fn remove(path: &str, recursive: bool) {
         if e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
             eprintln!("Directory not empty: use -r/--recursive to remove it and its contents");
         } else {
-            println!("{}", describe_error_kind(e.kind()));
+            eprintln!("{}", describe_error_kind(e.kind()));
         }
         std::process::exit(1);
     }

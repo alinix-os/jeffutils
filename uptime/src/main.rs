@@ -15,7 +15,7 @@ fn get_uptime_seconds() -> Result<u64, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let boot_secs = stdout.split(|c: char| !c.is_ascii_digit()).filter_map(|s| s.parse::<i64>().ok()).next().ok_or("Could not parse boot time")?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-    Ok((now - boot_secs) as u64)
+    Ok(now.saturating_sub(boot_secs) as u64)
 }
 
 fn format_duration(total_secs: u64) -> String {

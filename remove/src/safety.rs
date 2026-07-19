@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::os::linux::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
 /// Result of evaluating how dangerous a removal target is.
@@ -116,6 +117,13 @@ pub fn assess(raw_path: &str) -> Risk {
             .filter(|c| matches!(c, Component::Normal(_)))
             .count();
         if depth <= 1 {
+            return Risk::Critical(display);
+        }
+    }
+
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(&normalized) {
+        if meta.st_nlink() > 1 {
             return Risk::Critical(display);
         }
     }

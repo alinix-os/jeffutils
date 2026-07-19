@@ -29,13 +29,14 @@ pub(crate) fn describe_error_kind(kind: ErrorKind) -> &'static str {
 
 pub fn remove(path: &str) {
     if path.is_empty() {
-        panic!("use: remove <path> -f\n'path' arg is required")
+        eprintln!("use: remove <path> -f\n'path' arg is required");
+        std::process::exit(1);
     }
 
     match fs::remove_file(path) {
         Ok(_) => println!("File {} was removed with success", path),
         Err(e) => {
-            println!("{}", describe_error_kind(e.kind()));
+            eprintln!("{}", describe_error_kind(e.kind()));
             std::process::exit(1);
         }
     }

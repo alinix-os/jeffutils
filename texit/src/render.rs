@@ -63,12 +63,9 @@ impl Render {
 
             if idx < buffer.lines.len() {
                 let line = &buffer.lines[idx];
-                let start = buffer.scroll_x.min(line.len());
-                let visible = &line[start..];
-
-                let end = visible.len().min(self.term_cols);
-                let text_to_render = &visible[..end];
-                let highlighted = highlight_line(text_to_render);
+                let skip = buffer.scroll_x;
+                let display: String = line.chars().skip(skip).take(self.term_cols).collect();
+                let highlighted = highlight_line(&display);
                 let _ = stdout.queue(Print(highlighted));
             }
 

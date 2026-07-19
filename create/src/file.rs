@@ -12,7 +12,7 @@ pub(crate) fn describe_error_kind(kind: ErrorKind, already_exists: &'static str)
         ErrorKind::AddrInUse => "Address in use",
         ErrorKind::AddrNotAvailable => "Address not available",
         ErrorKind::BrokenPipe => "Broken pipe",
-        ErrorKind::AlreadyExists => "File already exists",
+        ErrorKind::AlreadyExists => already_exists,
         ErrorKind::WouldBlock => "Operation would block",
         ErrorKind::InvalidInput => "Invalid input",
         ErrorKind::InvalidData => "Invalid data",
@@ -50,7 +50,8 @@ fn write_file(path: &str, content: &str, recursive: bool) {
 
 pub fn create(path: &str, recursive: bool) {
     if path.is_empty() {
-        panic!("use: create -f <path>\n'path' arg is required")
+        eprintln!("use: create -f <path>\n'path' arg is required");
+        std::process::exit(1);
     }
 
     write_file(path, "", recursive);
@@ -58,11 +59,8 @@ pub fn create(path: &str, recursive: bool) {
 
 pub fn create_with_content(path: &str, content: &str, recursive: bool) {
     if path.is_empty() {
-        panic!("use: create -f <path>\n'path' arg is required")
-    }
-
-    if content.is_empty() {
-        panic!("us: create -f <path> -c <content>\n'content' arg is required")
+        eprintln!("use: create -f <path>\n'path' arg is required");
+        std::process::exit(1);
     }
 
     write_file(path, content, recursive);

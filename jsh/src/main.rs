@@ -182,18 +182,43 @@ fn run_interactive(mut state: ShellState) {
     let config = Config::builder()
         .completion_type(CompletionType::List)
         .completion_prompt_limit(100)
+        .bracketed_paste(true)
         .build();
 
     let mut rl = Editor::<JshHelper, DefaultHistory>::with_config(config)
         .expect("Erro ao inicializar editor de linha");
 
+    // Implement a smart Up/Down history search:
+    // If line is empty, it uses PreviousHistory/NextHistory (linear traversal).
+    // If line has text, it uses HistorySearchBackward/Forward (prefix search).
+    struct UpArrowHandler;
+    impl rustyline::ConditionalEventHandler for UpArrowHandler {
+        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _pos: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+            if ctx.line().is_empty() {
+                Some(rustyline::Cmd::PreviousHistory)
+            } else {
+                Some(rustyline::Cmd::HistorySearchBackward)
+            }
+        }
+    }
+    struct DownArrowHandler;
+    impl rustyline::ConditionalEventHandler for DownArrowHandler {
+        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _pos: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+            if ctx.line().is_empty() {
+                Some(rustyline::Cmd::NextHistory)
+            } else {
+                Some(rustyline::Cmd::HistorySearchForward)
+            }
+        }
+    }
+
     rl.bind_sequence(
         rustyline::KeyEvent(rustyline::KeyCode::Up, rustyline::Modifiers::empty()),
-        rustyline::Cmd::HistorySearchBackward,
+        rustyline::EventHandler::Conditional(Box::new(UpArrowHandler)),
     );
     rl.bind_sequence(
         rustyline::KeyEvent(rustyline::KeyCode::Down, rustyline::Modifiers::empty()),
-        rustyline::Cmd::HistorySearchForward,
+        rustyline::EventHandler::Conditional(Box::new(DownArrowHandler)),
     );
 
     let helper = JshHelper {
@@ -238,14 +263,17 @@ fn run_interactive(mut state: ShellState) {
 
                 let expanded_line = expand_history_refs(line, rl.history());
 
-                rl.add_history_entry(&expanded_line).ok();
+                rl.add_history_entry(line).ok();
                 let _ = rl.save_history(&history_path);
 
+                let show_timing = state.get_var("SHOW_TIMING") != "false";
                 let start_time = std::time::Instant::now();
                 run_line_with(&mut state, &expanded_line, |prompt| rl.readline(prompt).ok());
-                let elapsed = start_time.elapsed();
-                if elapsed.as_secs_f64() >= 2.0 {
-                    println!("\x1B[38;5;240m(⏳ demorou {:.1}s)\x1B[0m", elapsed.as_secs_f64());
+                if show_timing {
+                    let elapsed = start_time.elapsed();
+                    if elapsed.as_secs_f64() >= 2.0 {
+                        eprintln!("\x1B[38;5;240m(⏳ demorou {:.1}s)\x1B[0m", elapsed.as_secs_f64());
+                    }
                 }
             }
             Err(ReadlineError::Interrupted) => {

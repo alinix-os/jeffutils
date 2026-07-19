@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 fn print_usage() {
     eprintln!("Usage: {} [caminho] [-L <nível>]", std::env::args().nth(0).unwrap_or_else(|| "tree".into()));
 }
 
-fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize) {
+fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize, visited: &mut HashSet<(u64, u64)>) {
     if let Some(max) = max_depth {
         if depth > max {
             return;
@@ -28,8 +30,14 @@ fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize) {
         println!("{}{}{}", prefix, connector, name_str);
 
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if let Ok(meta) = entry.metadata() {
+                let key = (meta.dev(), meta.ino());
+                if !visited.insert(key) {
+                    continue;
+                }
+            }
             let next_prefix = format!("{}{}", prefix, if is_last_entry { "    " } else { "│   " });
-            walk_dir(&entry.path(), &next_prefix, max_depth, depth + 1);
+            walk_dir(&entry.path(), &next_prefix, max_depth, depth + 1, visited);
         }
     }
 }
@@ -57,9 +65,11 @@ fn main() {
             }
             "-L" | "--max-depth" => {
                 i += 1;
-                if i < args.len() {
-                    max_depth = args[i].parse().ok();
+                if i >= args.len() {
+                    eprintln!("Error: --max-depth requires a value");
+                    std::process::exit(1);
                 }
+                max_depth = args[i].parse().ok();
             }
             _ => root = args[i].clone(),
         }
@@ -73,5 +83,5 @@ fn main() {
     }
 
     println!("{}", root);
-    walk_dir(path, "", max_depth, 1);
+    walk_dir(path, "", max_depth, 1, &mut HashSet::new());
 }

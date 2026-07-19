@@ -1,0 +1,8 @@
+[package]
+name = "paginate"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "paginate"
+path = "src/main.rs"

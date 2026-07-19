@@ -21,6 +21,30 @@ const GRAY_CYAN: &str = "\x1B[38;5;152m";    // Soft grayish cian
 const GRAY_MAGENTA: &str = "\x1B[38;5;139m"; // Soft grayish magenta
 const GRAY_YELLOW: &str = "\x1B[38;5;143m";  // Soft grayish yellow
 
+fn get_username(uid: u32) -> String {
+    std::fs::read_to_string("/etc/passwd")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.split(':').nth(2).and_then(|id| id.parse::<u32>().ok()) == Some(uid))
+                .and_then(|l| l.split(':').next())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| uid.to_string())
+}
+
+fn get_groupname(gid: u32) -> String {
+    std::fs::read_to_string("/etc/group")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.split(':').nth(2).and_then(|id| id.parse::<u32>().ok()) == Some(gid))
+                .and_then(|l| l.split(':').next())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| gid.to_string())
+}
+
 fn print_usage() {
     eprintln!("Usage: {} [caminho] [-l] [-a] [-h] [--color=WHEN]", std::env::args().nth(0).unwrap_or_else(|| "ls".into()));
 }
@@ -90,6 +114,9 @@ fn format_mode(mode: u32) -> String {
     let r3 = if mode & 0o004 != 0 { "r" } else { "-" };
     let w3 = if mode & 0o002 != 0 { "w" } else { "-" };
     let x3 = if mode & 0o001 != 0 { "x" } else { "-" };
+    let x  = if mode & 0o4000 != 0 { if x == "x" { "s" } else { "S" } } else { x };
+    let x2 = if mode & 0o2000 != 0 { if x2 == "x" { "s" } else { "S" } } else { x2 };
+    let x3 = if mode & 0o1000 != 0 { if x3 == "x" { "t" } else { "T" } } else { x3 };
     format!("{}{}{}{}{}{}{}{}{}{}", file_type, r, w, x, r2, w2, x2, r3, w3, x3)
 }
 
@@ -167,10 +194,7 @@ fn list_directory(path: &Path, long: bool, all: bool, human: bool, use_color: bo
             let metadata_res = if name == "." {
                 fs::metadata(path)
             } else if name == ".." {
-                path.parent()
-                    .or_else(|| Some(Path::new("..")))
-                    .map(fs::metadata)
-                    .unwrap_or_else(|| fs::metadata(path))
+                fs::metadata(Path::new(".."))
             } else {
                 fs::metadata(path.join(name))
             };
@@ -180,7 +204,7 @@ fn list_directory(path: &Path, long: bool, all: bool, human: bool, use_color: bo
                     let perms = format_mode(metadata.permissions().mode());
                     let size_str = format_size(metadata.len(), human);
                     let reset = if use_color { RESET } else { "" };
-                    println!("{} {:>3} {:>5} {:>5} {:>8} {}{}{}", perms, metadata.nlink(), metadata.uid(), metadata.gid(), size_str, color, name, reset);
+                    println!("{} {:>3} {:>5} {:>5} {:>8} {}{}{}", perms, metadata.nlink(), get_username(metadata.uid()), get_groupname(metadata.gid()), size_str, color, name, reset);
                 }
                 Err(_) => {
                     println!("?????????   ?     ?     ?        ? {}{}{}", color, name, if use_color { RESET } else { "" });
@@ -221,7 +245,7 @@ fn list_directory(path: &Path, long: bool, all: bool, human: bool, use_color: bo
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let mut path = ".".to_string();
+    let mut paths: Vec<String> = Vec::new();
     let mut long = false;
     let mut all = false;
     let mut human = false;
@@ -236,17 +260,18 @@ fn main() {
             color_opt = "always".to_string();
         } else {
             match arg.as_str() {
-                "--help" | "-h" => {
+                "--help" => {
                     print_usage();
                     println!("Lists directory contents.");
                     println!("  -l       Long format");
                     println!("  -a       Show hidden files");
                     println!("  -h       Human-readable sizes");
                     println!("  --color[=WHEN]  Control whether color is used: always, never, auto");
-                    println!("  --help, -h  Show this help message");
-                    println!("  --version   Show version information");
+                    println!("  --help    Show this help message");
+                    println!("  --version Show version information");
                     return;
                 }
+                "-h" => human = true,
                 "--version" => {
                     println!("ls version 0.4.0");
                     return;
@@ -258,7 +283,7 @@ fn main() {
                 "-lah" | "-lha" | "-alh" | "-ahl" | "-hal" | "-hla" => { long = true; all = true; human = true; }
                 _ => {
                     if !arg.starts_with("-") {
-                        path = arg.clone();
+                        paths.push(arg.clone());
                     }
                 }
             }
@@ -272,28 +297,39 @@ fn main() {
         _ => std::io::stdout().is_terminal(),
     };
 
-    let path = Path::new(&path);
-    if !path.exists() {
-        eprintln!("Error: path '{}' not found", path.display());
-        std::process::exit(1);
+    if paths.is_empty() {
+        paths.push(".".to_string());
     }
 
-    if path.is_dir() {
-        list_directory(path, long, all, human, use_color);
-    } else {
-        let metadata = match fs::metadata(path) {
-            Ok(m) => m,
-            Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
-        };
-        let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-        let color = if use_color { file_color(metadata.permissions().mode(), name.starts_with('.')) } else { "" };
-        let reset = if use_color { RESET } else { "" };
-        if long {
-            let perms = format_mode(metadata.permissions().mode());
-            let size_str = format_size(metadata.len(), human);
-            println!("{} {:>3} {:>5} {:>5} {:>8} {}{}{}", perms, metadata.nlink(), metadata.uid(), metadata.gid(), size_str, color, name, reset);
+    let multiple = paths.len() > 1;
+
+    for p in &paths {
+        let path = Path::new(p);
+        if multiple {
+            println!("== {} ==", path.display());
+        }
+        if !path.exists() {
+            eprintln!("Error: path '{}' not found", path.display());
+            if multiple { continue; } else { std::process::exit(1); }
+        }
+
+        if path.is_dir() {
+            list_directory(path, long, all, human, use_color);
         } else {
-            println!("{}{}{}", color, name, reset);
+            let metadata = match fs::metadata(path) {
+                Ok(m) => m,
+                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+            };
+            let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+            let color = if use_color { file_color(metadata.permissions().mode(), name.starts_with('.')) } else { "" };
+            let reset = if use_color { RESET } else { "" };
+            if long {
+                let perms = format_mode(metadata.permissions().mode());
+                let size_str = format_size(metadata.len(), human);
+                println!("{} {:>3} {:>5} {:>5} {:>8} {}{}{}", perms, metadata.nlink(), get_username(metadata.uid()), get_groupname(metadata.gid()), size_str, color, name, reset);
+            } else {
+                println!("{}{}{}", color, name, reset);
+            }
         }
     }
 }

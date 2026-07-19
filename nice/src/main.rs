@@ -13,14 +13,14 @@ fn print_usage() {
 }
 
 #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "ios"))]
-unsafe fn clear_errno() { *libc::__error() = 0; }
+unsafe fn clear_errno() { unsafe { *libc::__error() = 0; } }
 #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "ios"))]
-unsafe fn get_errno() -> i32 { *libc::__error() }
+unsafe fn get_errno() -> i32 { unsafe { *libc::__error() } }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-unsafe fn clear_errno() { *libc::__errno_location() = 0; }
+unsafe fn clear_errno() { unsafe { *libc::__errno_location() = 0; } }
 #[cfg(any(target_os = "linux", target_os = "android"))]
-unsafe fn get_errno() -> i32 { *libc::__errno_location() }
+unsafe fn get_errno() -> i32 { unsafe { *libc::__errno_location() } }
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -54,6 +54,26 @@ fn main() {
                 }
             };
             command_start = 2;
+        } else if args[0].starts_with("-n") && args[0].len() > 2 {
+            let val = &args[0][2..];
+            adjustment = match val.parse::<i32>() {
+                Ok(n) => n,
+                Err(_) => {
+                    eprintln!("nice: argumento inválido: '{}'", val);
+                    std::process::exit(1);
+                }
+            };
+            command_start = 1;
+        } else if args[0].starts_with("+") {
+            let val = &args[0][1..];
+            adjustment = match val.parse::<i32>() {
+                Ok(n) => n,
+                Err(_) => {
+                    eprintln!("nice: argumento inválido: '{}'", val);
+                    std::process::exit(1);
+                }
+            };
+            command_start = 1;
         } else if args[0].starts_with("--adjustment=") {
             let val = args[0].trim_start_matches("--adjustment=");
             adjustment = match val.parse::<i32>() {

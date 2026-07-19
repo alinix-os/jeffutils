@@ -1,0 +1,11 @@
+[package]
+name = "devnode"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libc = "0.2"
+
+[[bin]]
+name = "devnode"
+path = "src/main.rs"

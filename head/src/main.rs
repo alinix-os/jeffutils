@@ -23,10 +23,14 @@ fn head_reader<R: BufRead>(mut reader: R, num_lines: usize) -> io::Result<()> {
         if bytes_read == 0 {
             break;
         }
-        stdout.write_all(line.as_bytes())?;
+        match stdout.write_all(line.as_bytes()) {
+            Ok(()) => {}
+            Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+            Err(e) => return Err(e),
+        }
         count += 1;
     }
-    stdout.flush()?;
+    let _ = stdout.flush();
     Ok(())
 }
 
@@ -58,6 +62,16 @@ fn main() {
                     eprintln!("head: invalid number of lines: '{}'", args[i]);
                     std::process::exit(1);
                 }
+            } else {
+                eprintln!("head: option requires an argument -- 'lines'");
+                std::process::exit(1);
+            }
+        } else if let Some(val) = args[i].strip_prefix("--lines=") {
+            if let Ok(n) = val.parse::<usize>() {
+                num_lines = n;
+            } else {
+                eprintln!("head: invalid number of lines: '{}'", val);
+                std::process::exit(1);
             }
         } else if args[i].starts_with("-n") {
             let val = &args[i][2..];
@@ -73,10 +87,12 @@ fn main() {
         i += 1;
     }
 
+    let mut exit_code = 0;
+
     if files.is_empty() {
         if let Err(e) = head_reader(io::stdin().lock(), num_lines) {
             eprintln!("head: error reading stdin: {}", e);
-            std::process::exit(1);
+            exit_code = 1;
         }
     } else {
         let print_headers = files.len() > 1;
@@ -91,7 +107,7 @@ fn main() {
             if filename == "-" {
                 if let Err(e) = head_reader(io::stdin().lock(), num_lines) {
                     eprintln!("head: error reading stdin: {}", e);
-                    std::process::exit(1);
+                    exit_code = 1;
                 }
             } else {
                 match File::open(filename) {
@@ -99,15 +115,17 @@ fn main() {
                         let reader = BufReader::new(file);
                         if let Err(e) = head_reader(reader, num_lines) {
                             eprintln!("head: error reading '{}': {}", filename, e);
-                            std::process::exit(1);
+                            exit_code = 1;
                         }
                     }
                     Err(e) => {
                         eprintln!("head: cannot open '{}' for reading: {}", filename, e);
-                        std::process::exit(1);
+                        exit_code = 1;
                     }
                 }
             }
         }
     }
+
+    std::process::exit(exit_code);
 }

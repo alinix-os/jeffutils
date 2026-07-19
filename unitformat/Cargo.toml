@@ -1,0 +1,8 @@
+[package]
+name = "unitformat"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "unitformat"
+path = "src/main.rs"

@@ -78,7 +78,25 @@ fn show_perms(path: &Path) {
 
     let protected = (mode & 0o1000) != 0;
     println!("Protected : {}", if protected { "Yes" } else { "No" });
-    println!("Immutable : No");
+    let immutable = std::process::Command::new("lsattr")
+        .arg(path.as_os_str())
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                stdout.lines().next().map(|first| {
+                    first.split_whitespace().next().map(|flags| flags.contains('i')).unwrap_or(false)
+                })
+            } else {
+                None
+            }
+        });
+    match immutable {
+        Some(true) => println!("Immutable : Yes"),
+        Some(false) => println!("Immutable : No"),
+        None => println!("Immutable : Unknown"),
+    }
 }
 
 fn set_perms(path: &Path, mode_str: &str) {
@@ -268,24 +286,81 @@ fn main() {
         "exec" => make_executable(path),
         "readonly" => make_readonly(path),
         "protect" => {
-            println!("Protected: {} is now protected (kernel-level)", path.display());
+            let status = std::process::Command::new("chattr")
+                .args(["+i", path.to_str().unwrap()])
+                .status();
+            match status {
+                Ok(s) if s.success() => println!("Protected: {} is now protected (kernel-level)", path.display()),
+                Ok(_) => {
+                    eprintln!("Error: could not set immutable flag (permission denied)");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: chattr not available or failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         "unprotect" => {
-            println!("Unprotected: {} protection removed", path.display());
+            let status = std::process::Command::new("chattr")
+                .args(["-i", path.to_str().unwrap()])
+                .status();
+            match status {
+                Ok(s) if s.success() => println!("Unprotected: {} protection removed", path.display()),
+                Ok(_) => {
+                    eprintln!("Error: could not remove immutable flag (permission denied)");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: chattr not available or failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         "allow" => {
             if args.len() < 4 {
                 eprintln!("Error: allow requires <user> <permissions>");
                 std::process::exit(1);
             }
-            println!("ACL: {} granted {} access to {}", args[2], args[3], path.display());
+            let user = &args[2];
+            let perms = &args[3];
+            let acl_spec = format!("u:{}:{}", user, perms);
+            let status = std::process::Command::new("setfacl")
+                .args(["-m", &acl_spec, path.to_str().unwrap()])
+                .status();
+            match status {
+                Ok(s) if s.success() => println!("ACL: {} granted {} access to {}", user, perms, path.display()),
+                Ok(_) => {
+                    eprintln!("Error: could not set ACL (permission denied)");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: setfacl not available or failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         "deny" => {
             if args.len() < 3 {
                 eprintln!("Error: deny requires a username");
                 std::process::exit(1);
             }
-            println!("ACL: {} denied access to {}", args[2], path.display());
+            let user = &args[2];
+            let acl_spec = format!("u:{}:---", user);
+            let status = std::process::Command::new("setfacl")
+                .args(["-m", &acl_spec, path.to_str().unwrap()])
+                .status();
+            match status {
+                Ok(s) if s.success() => println!("ACL: {} denied access to {}", user, path.display()),
+                Ok(_) => {
+                    eprintln!("Error: could not set ACL (permission denied)");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: setfacl not available or failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         _ => {
             eprintln!("Error: unknown action '{}'", action);

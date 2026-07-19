@@ -101,6 +101,10 @@ INIT_INFO=true
 # prompt — no need to `source .jshrc` or restart the shell.
 HOT_RELOAD=true
 
+# When true, shows elapsed time for commands that take >= 2s.
+# Set to false to disable the \"(⏳ demorou Xs)\" notification.
+SHOW_TIMING=true
+
 alias c=\"clear\"
 alias ls=\"ls --color=auto\"
 alias grep=\"grep --color=auto\"

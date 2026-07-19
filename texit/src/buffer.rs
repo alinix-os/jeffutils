@@ -55,7 +55,8 @@ impl Buffer {
     /// Inserts a character at the current cursor position
     pub fn insert_char(&mut self, c: char) {
         let line = &mut self.lines[self.cy];
-        line.insert(self.cx, c);
+        let byte_pos = line.char_indices().nth(self.cx).map(|(i, _)| i).unwrap_or(line.len());
+        line.insert(byte_pos, c);
         self.cx += 1;
         self.modified = true;
     }
@@ -65,13 +66,14 @@ impl Buffer {
         if self.cx > 0 {
             // Delete within the same line
             self.cx -= 1;
-            self.lines[self.cy].remove(self.cx);
+            let byte_pos = self.lines[self.cy].char_indices().nth(self.cx).map(|(i, _)| i).unwrap_or(self.lines[self.cy].len());
+            self.lines[self.cy].remove(byte_pos);
             self.modified = true;
         } else if self.cy > 0 {
             // Merge current line with the previous one
             let current_line = self.lines.remove(self.cy);
             self.cy -= 1;
-            self.cx = self.lines[self.cy].len();
+            self.cx = self.lines[self.cy].chars().count();
             self.lines[self.cy].push_str(&current_line);
             self.modified = true;
         }
@@ -79,10 +81,11 @@ impl Buffer {
 
     /// Deletes the character under the cursor (Delete)
     pub fn delete_fwd(&mut self) {
-        let len = self.lines[self.cy].len();
+        let len = self.lines[self.cy].chars().count();
         if self.cx < len {
             // Remove the character under the cursor
-            self.lines[self.cy].remove(self.cx);
+            let byte_pos = self.lines[self.cy].char_indices().nth(self.cx).map(|(i, _)| i).unwrap_or(self.lines[self.cy].len());
+            self.lines[self.cy].remove(byte_pos);
             self.modified = true;
         } else if self.cy + 1 < self.lines.len() {
             // Merge with the next line
@@ -95,7 +98,8 @@ impl Buffer {
     /// Inserts a newline at the cursor position (Enter)
     pub fn insert_newline(&mut self) {
         let line = &mut self.lines[self.cy];
-        let rest = line.split_off(self.cx);
+        let byte_pos = line.char_indices().nth(self.cx).map(|(i, _)| i).unwrap_or(line.len());
+        let rest = line.split_off(byte_pos);
         self.lines.insert(self.cy + 1, rest);
         self.cy += 1;
         self.cx = 0;
@@ -125,13 +129,13 @@ impl Buffer {
         } else if self.cy > 0 {
             // Move to the end of the previous line
             self.cy -= 1;
-            self.cx = self.lines[self.cy].len();
+            self.cx = self.lines[self.cy].chars().count();
         }
     }
 
     /// Moves the cursor right by one character
     pub fn move_right(&mut self) {
-        let len = self.lines[self.cy].len();
+        let len = self.lines[self.cy].chars().count();
         if self.cx < len {
             self.cx += 1;
         } else if self.cy + 1 < self.lines.len() {
@@ -148,7 +152,7 @@ impl Buffer {
 
     /// Moves the cursor to the end of the line (End)
     pub fn go_end(&mut self) {
-        self.cx = self.lines[self.cy].len();
+        self.cx = self.lines[self.cy].chars().count();
     }
 
     /// Moves the cursor up by one screenful (PageUp)
@@ -178,7 +182,7 @@ impl Buffer {
         if self.cy >= self.lines.len() {
             self.cy = self.lines.len().saturating_sub(1);
         }
-        let len = self.lines[self.cy].len();
+        let len = self.lines[self.cy].chars().count();
         if self.cx > len {
             self.cx = len;
         }
@@ -203,7 +207,7 @@ impl Buffer {
 
     /// Clamps cx so it does not exceed the current line length
     fn clamp_cx_to_line(&mut self) {
-        let len = self.lines[self.cy].len();
+        let len = self.lines[self.cy].chars().count();
         if self.cx > len {
             self.cx = len;
         }
@@ -218,8 +222,10 @@ impl Buffer {
         }
 
         // Search from current cursor position in the current line
-        if let Some(col) = self.lines[self.cy][self.cx..].find(query) {
-            let col = self.cx + col;
+        let byte_pos = self.lines[self.cy].char_indices().nth(self.cx).map(|(i, _)| i).unwrap_or(self.lines[self.cy].len());
+        if let Some(byte_offset) = self.lines[self.cy][byte_pos..].find(query) {
+            let byte_end = byte_pos + byte_offset;
+            let col = self.lines[self.cy][..byte_end].chars().count();
             return Some((self.cy, col));
         }
 

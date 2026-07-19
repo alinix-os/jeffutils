@@ -40,34 +40,26 @@ fn main() {
 
     println!("Writing pattern (0xAA)...");
     let write_start = Instant::now();
-    for i in 0..size_bytes {
-        vec[i] = 0xAA;
-    }
+    vec.fill(0xAA);
     let write_time = write_start.elapsed();
     println!("  Write: {:?} ({:.2} MB/s)", write_time, size_mb as f64 / write_time.as_secs_f64());
 
     println!("Reading and verifying...");
     let read_start = Instant::now();
-    for i in 0..size_bytes {
-        if vec[i] != 0xAA {
-            eprintln!("  Error: mismatch at byte {}", i);
-            std::process::exit(1);
-        }
+    if !vec.iter().all(|&b| b == 0xAA) {
+        eprintln!("  Error: mismatch in 0xAA pattern");
+        std::process::exit(1);
     }
     let read_time = read_start.elapsed();
     println!("  Read & Verify: {:?} ({:.2} MB/s)", read_time, size_mb as f64 / read_time.as_secs_f64());
 
     println!("Writing pattern (0x55)...");
-    for i in 0..size_bytes {
-        vec[i] = 0x55;
-    }
+    vec.fill(0x55);
 
     println!("Verifying 0x55 pattern...");
-    for i in 0..size_bytes {
-        if vec[i] != 0x55 {
-            eprintln!("  Error: mismatch at byte {}", i);
-            std::process::exit(1);
-        }
+    if !vec.iter().all(|&b| b == 0x55) {
+        eprintln!("  Error: mismatch in 0x55 pattern");
+        std::process::exit(1);
     }
 
     println!("Deallocating...");

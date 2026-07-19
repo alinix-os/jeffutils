@@ -105,19 +105,18 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         let total = get_mem_value("MemTotal:");
-        let free = get_mem_value("MemFree:");
         let available = get_mem_value("MemAvailable:");
         let buffers = get_mem_value("Buffers:");
         let cached = get_mem_value("Cached:");
         let sreclaimable = get_mem_value("SReclaimable:");
 
-        let total_used = total.saturating_sub(free);
+        let total_used = total.saturating_sub(available);
         let cache_buffers = buffers + cached + sreclaimable;
 
         println!("Memory Usage:");
         println!("  Total     : {}", format_size(total, system));
         println!("  Used      : {} (cache/buff: {})", format_size(total_used, system), format_size(cache_buffers, system));
-        println!("  Free      : {}", format_size(free, system));
+        println!("  Free      : {}", format_size(available, system));
         println!("  Available : {}", format_size(available, system));
 
         let swap_total = get_mem_value("SwapTotal:");

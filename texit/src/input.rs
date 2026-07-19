@@ -63,7 +63,38 @@ pub fn read_key() -> Key {
             Key::Ctrl(c)
         }
         // Regular character
-        c => Key::Char(c as char),
+        b if b < 0x80 => Key::Char(b as char),  // ASCII
+        b if b >= 0xC0 && b < 0xE0 => {
+            // 2-byte UTF-8
+            let mut buf2 = [0u8; 1];
+            let _ = stdin().read_exact(&mut buf2);
+            let bytes = [b, buf2[0]];
+            match std::str::from_utf8(&bytes) {
+                Ok(s) => Key::Char(s.chars().next().unwrap_or(' ')),
+                Err(_) => Key::Unknown,
+            }
+        }
+        b if b >= 0xE0 && b < 0xF0 => {
+            // 3-byte UTF-8
+            let mut buf2 = [0u8; 2];
+            let _ = stdin().read_exact(&mut buf2);
+            let bytes = [b, buf2[0], buf2[1]];
+            match std::str::from_utf8(&bytes) {
+                Ok(s) => Key::Char(s.chars().next().unwrap_or(' ')),
+                Err(_) => Key::Unknown,
+            }
+        }
+        b if b >= 0xF0 => {
+            // 4-byte UTF-8
+            let mut buf2 = [0u8; 3];
+            let _ = stdin().read_exact(&mut buf2);
+            let bytes = [b, buf2[0], buf2[1], buf2[2]];
+            match std::str::from_utf8(&bytes) {
+                Ok(s) => Key::Char(s.chars().next().unwrap_or(' ')),
+                Err(_) => Key::Unknown,
+            }
+        }
+        _ => Key::Unknown,
     }
 }
 

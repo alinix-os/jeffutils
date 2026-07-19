@@ -324,6 +324,11 @@ impl Highlighter for JshHelper {
                     res.push_str(&format!("\x1B[31m{}\x1B[0m", word)); // Red
                 }
                 *is_first = false;
+                
+                // Allow commands following wrappers like sudo to also be highlighted
+                if matches!(word, "sudo" | "time" | "exec" | "env" | "nohup" | "watch" | "xargs") {
+                    *is_first = true;
+                }
             } else if word.starts_with('-') {
                 res.push_str(&format!("\x1B[38;5;228m{}\x1B[0m", word)); // Pale yellow for flags
             } else if Path::new(&crate::utils::expand_tilde(word)).is_dir() || word == "~" || word == ".-1" || word == "$PWD_BACK" || word == "$PB" {
@@ -375,12 +380,15 @@ impl Highlighter for JshHelper {
                     in_double_quote = true;
                     result.push_str("\x1B[33m\"\x1B[0m");
                 }
-                ' ' | '\t' => {
+                ' ' | '\t' | '\r' | '\n' => {
                     if let Some(s) = word_start {
                         flush_word(s, i, &mut result, &mut is_first_word);
                         word_start = None;
                     }
                     result.push(c);
+                    if c == '\n' {
+                        is_first_word = true;
+                    }
                 }
                 '|' | '&' | ';' | '<' | '>' => {
                     if let Some(s) = word_start {

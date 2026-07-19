@@ -7,15 +7,20 @@ fn print_usage() {
 #[cfg(unix)]
 fn send_signal(pid: u32, signal: &str) -> Result<(), String> {
     let sig = match signal {
-        "TERM" | "15" => "15",
-        "KILL" | "9" => "9",
-        "HUP" | "1" => "1",
-        "INT" | "2" => "2",
-        "QUIT" | "3" => "3",
-        "STOP" | "19" => "19",
-        "CONT" | "18" => "18",
-        "USR1" | "10" => "10",
-        "USR2" | "12" => "12",
+        "SIGTERM" | "TERM" | "15" => "15",
+        "SIGKILL" | "KILL" | "9" => "9",
+        "SIGHUP" | "HUP" | "1" => "1",
+        "SIGINT" | "INT" | "2" => "2",
+        "SIGQUIT" | "QUIT" | "3" => "3",
+        "SIGSTOP" | "STOP" | "19" => "19",
+        "SIGCONT" | "CONT" | "18" => "18",
+        "SIGUSR1" | "USR1" | "10" => "10",
+        "SIGUSR2" | "USR2" | "12" => "12",
+        "SIGPIPE" | "PIPE" | "13" => "13",
+        "SIGALRM" | "ALRM" | "14" => "14",
+        "SIGTSTP" | "TSTP" | "20" => "20",
+        "SIGTTIN" | "TTIN" | "21" => "21",
+        "SIGTTOU" | "TTOU" | "22" => "22",
         _ => return Err(format!("Unknown signal '{}'", signal)),
     };
 
@@ -118,11 +123,14 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     signal = &args[i];
+                } else {
+                    eprintln!("Error: --signal/-s requires a value");
+                    std::process::exit(1);
                 }
             }
             _ => {
                 if pid.is_none() {
-                    pid = args[i].parse().ok();
+                    pid = validate_pid(&args[i]);
                 }
             }
         }
