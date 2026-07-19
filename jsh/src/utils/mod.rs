@@ -58,6 +58,57 @@ pub fn expand_tilde_with(path: &str, home: &str) -> String {
     }
 }
 
+pub fn suggest_command(cmd: &str, state: &crate::shell::ShellState) -> Option<String> {
+    if std::env::var("JSH_DID_YOU_MEAN").unwrap_or_else(|_| "1".to_string()) == "0" {
+        return None;
+    }
+
+    let mut candidates = vec![
+        "cd".to_string(), "export".to_string(), "unset".to_string(),
+        "set".to_string(), "alias".to_string(), "unalias".to_string(),
+        "source".to_string(), "true".to_string(), "false".to_string(),
+        "exec".to_string(), "exit".to_string(),
+    ];
+
+    if let Ok(aliases) = state.aliases.lock() {
+        for alias in aliases.keys() {
+            candidates.push(alias.clone());
+        }
+    }
+    if let Ok(funcs) = state.functions.lock() {
+        for func in funcs.keys() {
+            candidates.push(func.clone());
+        }
+    }
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    for path in std::env::split_paths(&path_var) {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() || file_type.is_symlink() {
+                        if let Ok(name) = entry.file_name().into_string() {
+                            candidates.push(name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut best_match = None;
+    let mut min_distance = 3; // threshold
+    
+    for cand in candidates {
+        let dist = strsim::damerau_levenshtein(cmd, &cand);
+        if dist < min_distance {
+            min_distance = dist;
+            best_match = Some(cand);
+        }
+    }
+    best_match
+}
+
 /// Expands a leading `~` (or `~/`) to the value of `$HOME`.
 pub fn expand_tilde(path: &str) -> String {
     let home = env::var("HOME").unwrap_or_default();

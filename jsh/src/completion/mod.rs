@@ -31,6 +31,30 @@ fn known_subcommands(cmd: &str) -> Option<&'static [&'static str]> {
             "fmt", "init", "install", "new", "publish", "remove", "run",
             "test", "update",
         ],
+        "dnf" | "yum" => &[
+            "alias", "autoremove", "check", "check-update", "clean", "deplist",
+            "distro-sync", "downgrade", "group", "help", "history", "info",
+            "install", "list", "makecache", "mark", "module", "provides",
+            "reinstall", "remove", "repoquery", "repository-packages", "search",
+            "shell", "swap", "update", "updateinfo", "upgrade", "upgrade-minimal"
+        ],
+        "apt" | "apt-get" => &[
+            "update", "upgrade", "install", "remove", "purge", "autoremove",
+            "search", "show", "list", "edit-sources", "help"
+        ],
+        _ => return None,
+    })
+}
+
+/// Flags and options offered for well-known tools when completing arguments that start with `-`.
+fn known_options(cmd: &str) -> Option<&'static [&'static str]> {
+    Some(match cmd {
+        "git" => &["--help", "--version", "--exec-path", "--html-path", "--man-path", "--info-path", "-p", "--paginate", "--no-pager", "--no-replace-objects", "--bare", "--git-dir=", "--work-tree=", "--namespace="],
+        "ls" => &["-a", "--all", "-A", "--almost-all", "-l", "-h", "--human-readable", "-R", "--recursive", "-1", "--color=auto", "--color=always", "--color=never"],
+        "grep" => &["-i", "--ignore-case", "-v", "--invert-match", "-c", "--count", "-n", "--line-number", "-r", "--recursive", "-E", "--extended-regexp", "-F", "--fixed-strings"],
+        "cargo" => &["--help", "--version", "--list", "--verbose", "--quiet", "--color"],
+        "dnf" | "yum" => &["-y", "--assumeyes", "-q", "--quiet", "-v", "--verbose", "--help", "--version", "--enablerepo=", "--disablerepo="],
+        "apt" | "apt-get" => &["-y", "--yes", "-q", "--quiet", "--help", "--version", "-d", "--download-only", "--purge", "--reinstall"],
         _ => return None,
     })
 }
@@ -53,6 +77,8 @@ pub struct JshHelper {
     pub hinter: HistoryHinter,
     pub completer: FilenameCompleter,
     pub aliases: Arc<Mutex<HashMap<String, String>>>,
+    pub shell_vars: Arc<Mutex<HashMap<String, String>>>,
+    pub functions: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Helper for JshHelper {}
@@ -85,7 +111,18 @@ impl Completer for JshHelper {
                     });
                 }
             }
+            if let Ok(shell_vars) = self.shell_vars.lock() {
+                for key in shell_vars.keys() {
+                    if key.to_lowercase().starts_with(&var_prefix.to_lowercase()) {
+                        candidates.push(Pair {
+                            display: format!("${}", key),
+                            replacement: format!("${}", key),
+                        });
+                    }
+                }
+            }
             candidates.sort_by(|a, b| a.display.cmp(&b.display));
+            candidates.dedup_by(|a, b| a.display == b.display);
             return Ok((word_start, candidates));
         }
 
@@ -106,6 +143,14 @@ impl Completer for JshHelper {
 
             if let Ok(aliases) = self.aliases.lock() {
                 for name in aliases.keys() {
+                    if name.to_lowercase().starts_with(&wl) {
+                        candidates.push(Pair { display: name.clone(), replacement: name.clone() });
+                    }
+                }
+            }
+
+            if let Ok(functions) = self.functions.lock() {
+                for name in functions.keys() {
                     if name.to_lowercase().starts_with(&wl) {
                         candidates.push(Pair { display: name.clone(), replacement: name.clone() });
                     }
@@ -136,6 +181,22 @@ impl Completer for JshHelper {
             if let Some(subs) = known_subcommands(first_word) {
                 let wl = word.to_lowercase();
                 let mut candidates: Vec<Pair> = subs
+                    .iter()
+                    .filter(|s| s.to_lowercase().starts_with(&wl))
+                    .map(|s| Pair { display: s.to_string(), replacement: s.to_string() })
+                    .collect();
+                if !candidates.is_empty() {
+                    candidates.sort_by(|a, b| a.display.cmp(&b.display));
+                    return Ok((word_start, candidates));
+                }
+            }
+        }
+
+        // Flag/option completion if the user starts typing a hyphen
+        if word.starts_with('-') {
+            if let Some(opts) = known_options(first_word) {
+                let wl = word.to_lowercase();
+                let mut candidates: Vec<Pair> = opts
                     .iter()
                     .filter(|s| s.to_lowercase().starts_with(&wl))
                     .map(|s| Pair { display: s.to_string(), replacement: s.to_string() })
@@ -232,57 +293,117 @@ impl Highlighter for JshHelper {
         if line.is_empty() {
             return Cow::Borrowed(line);
         }
-        
-        let mut result = String::new();
-        let words: Vec<&str> = line.split_whitespace().collect();
-        if words.is_empty() {
-            return Cow::Borrowed(line);
-        }
-        
-        let mut current_idx = 0;
+
+        let mut result = String::with_capacity(line.len() + 100);
+        let mut chars = line.char_indices().peekable();
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut word_start = None;
+        let mut is_first_word = true;
+
         let aliases_map = self.aliases.lock().unwrap();
-        let first_word = words[0];
 
-        for (i, word) in words.iter().enumerate() {
-            if let Some(pos) = line[current_idx..].find(word) {
-                result.push_str(&line[current_idx..current_idx + pos]);
-                current_idx += pos + word.len();
-            }
+        // Helper to flush a collected word with syntax highlighting
+        let flush_word = |start: usize, end: usize, res: &mut String, is_first: &mut bool| {
+            if start >= end { return; }
+            let word = &line[start..end];
             
-            let clean_word = if word.starts_with("~/") {
-                word.replacen("~/", "", 1)
-            } else if *word == "~" {
-                "".to_string()
-            } else {
-                word.to_string()
-            };
-
-            if i == 0 {
-                if *word == "texit" || *word == "nano" || is_executable(word) {
-                    result.push_str(&format!("\x1B[32m{}\x1B[0m", word)); // Green
-                } else if aliases_map.contains_key(*word) {
-                    result.push_str(&format!("\x1B[38;5;208m{}\x1B[0m", word)); // Orange
+            if word.starts_with('$') {
+                res.push_str(&format!("\x1B[38;5;39m{}\x1B[0m", word)); // Light blue for variables
+            } else if *is_first {
+                let expanded_word = crate::utils::expand_tilde(word);
+                if word == "texit" || word == "nano" || is_executable(word) {
+                    res.push_str(&format!("\x1B[32m{}\x1B[0m", word)); // Green
+                } else if aliases_map.contains_key(word) {
+                    res.push_str(&format!("\x1B[38;5;208m{}\x1B[0m", word)); // Orange
                 } else if is_builtin(word) {
-                    result.push_str(&format!("\x1B[32m{}\x1B[0m", word)); // Green
-                } else if Path::new(&clean_word).is_dir() || *word == "~" || *word == ".-1" || *word == "$PWD_BACK" || *word == "$PB" {
-                    result.push_str(&format!("\x1B[34m{}\x1B[0m", word)); // Blue
+                    res.push_str(&format!("\x1B[32m{}\x1B[0m", word)); // Green
+                } else if Path::new(&expanded_word).is_dir() || word == "~" || word == ".-1" || word == "$PWD_BACK" || word == "$PB" {
+                    res.push_str(&format!("\x1B[34m{}\x1B[0m", word)); // Blue
                 } else {
-                    result.push_str(&format!("\x1B[31m{}\x1B[0m", word)); // Red
+                    res.push_str(&format!("\x1B[31m{}\x1B[0m", word)); // Red
                 }
+                *is_first = false;
+            } else if word.starts_with('-') {
+                res.push_str(&format!("\x1B[38;5;228m{}\x1B[0m", word)); // Pale yellow for flags
+            } else if Path::new(&crate::utils::expand_tilde(word)).is_dir() || word == "~" || word == ".-1" || word == "$PWD_BACK" || word == "$PB" {
+                res.push_str(&format!("\x1B[34m{}\x1B[0m", word)); // Blue for dirs
             } else {
-                if first_word == "nano" || first_word == "texit" {
-                    result.push_str(&format!("\x1B[36m{}\x1B[0m", word)); // Cyan for editor arguments
-                } else if Path::new(&clean_word).is_dir() || *word == "~" || *word == ".-1" || *word == "$PWD_BACK" || *word == "$PB" {
-                    result.push_str(&format!("\x1B[34m{}\x1B[0m", word));
+                res.push_str(word);
+            }
+        };
+
+        while let Some((i, c)) = chars.next() {
+            if in_single_quote {
+                result.push_str("\x1B[33m"); // Yellow for strings
+                result.push(c);
+                if c == '\'' {
+                    in_single_quote = false;
+                }
+                result.push_str("\x1B[0m");
+                continue;
+            }
+            if in_double_quote {
+                if c == '$' {
+                    // Quick variable highlight inside double quotes
+                    result.push_str("\x1B[38;5;39m$\x1B[0m");
                 } else {
-                    result.push_str(word);
+                    result.push_str("\x1B[33m");
+                    result.push(c);
+                    if c == '"' {
+                        in_double_quote = false;
+                    }
+                    result.push_str("\x1B[0m");
+                }
+                continue;
+            }
+
+            match c {
+                '\'' => {
+                    if let Some(s) = word_start {
+                        flush_word(s, i, &mut result, &mut is_first_word);
+                        word_start = None;
+                    }
+                    in_single_quote = true;
+                    result.push_str("\x1B[33m'\x1B[0m");
+                }
+                '"' => {
+                    if let Some(s) = word_start {
+                        flush_word(s, i, &mut result, &mut is_first_word);
+                        word_start = None;
+                    }
+                    in_double_quote = true;
+                    result.push_str("\x1B[33m\"\x1B[0m");
+                }
+                ' ' | '\t' => {
+                    if let Some(s) = word_start {
+                        flush_word(s, i, &mut result, &mut is_first_word);
+                        word_start = None;
+                    }
+                    result.push(c);
+                }
+                '|' | '&' | ';' | '<' | '>' => {
+                    if let Some(s) = word_start {
+                        flush_word(s, i, &mut result, &mut is_first_word);
+                        word_start = None;
+                    }
+                    result.push_str(&format!("\x1B[38;5;161m{}\x1B[0m", c)); // Pink/Red for operators
+                    if matches!(c, '|' | '&' | ';') {
+                        is_first_word = true; // reset first word after pipeline/sequence
+                    }
+                }
+                _ => {
+                    if word_start.is_none() {
+                        word_start = Some(i);
+                    }
                 }
             }
         }
-        
-        if current_idx < line.len() {
-            result.push_str(&line[current_idx..]);
+
+        if let Some(s) = word_start {
+            flush_word(s, line.len(), &mut result, &mut is_first_word);
         }
+
         Cow::Owned(result)
     }
 
@@ -305,6 +426,8 @@ mod tests {
             hinter: HistoryHinter::new(),
             completer: FilenameCompleter::new(),
             aliases: Arc::new(Mutex::new(HashMap::new())),
+            shell_vars: Arc::new(Mutex::new(HashMap::new())),
+            functions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -338,8 +461,34 @@ mod tests {
     fn tilde_kept_in_replacement() {
         let h = helper();
         // "~/" should read $HOME and keep the ~/ prefix in every replacement.
-        if let Some((_, cands)) = h.complete_path("~/", 0, false) {
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        if let Ok((_, cands)) = h.complete("~/", 2, &ctx) {
             assert!(cands.iter().all(|p| p.replacement.starts_with("~/")));
         }
+    }
+
+    #[test]
+    fn completes_local_vars() {
+        let h = helper();
+        h.shell_vars.lock().unwrap().insert("MY_TEST_LOCAL_VAR".to_string(), "value".to_string());
+        
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        let (pos, candidates) = h.complete("$MY_TEST_L", 10, &ctx).unwrap();
+        assert_eq!(pos, 0);
+        assert!(candidates.iter().any(|p| p.display == "$MY_TEST_LOCAL_VAR"));
+    }
+
+    #[test]
+    fn completes_functions() {
+        let h = helper();
+        h.functions.lock().unwrap().insert("my_test_func".to_string(), "body".to_string());
+        
+        let history = rustyline::history::DefaultHistory::new();
+        let ctx = Context::new(&history);
+        let (pos, candidates) = h.complete("my_te", 5, &ctx).unwrap();
+        assert_eq!(pos, 0);
+        assert!(candidates.iter().any(|p| p.display == "my_test_func"));
     }
 }

@@ -160,9 +160,16 @@ fn complete_line<H: Helper>(
                 Cmd::Abort => {
                     if i < candidates.len() {
                         s.line.update(&backup, backup_pos, &mut s.changes);
-                        s.refresh_line()?;
                     }
                     s.changes.truncate(mark);
+                    s.out.write_and_flush("\n\x1b[K\r\x1b[A")?;
+                    s.refresh_line()?;
+                    return Ok(None);
+                }
+                Cmd::AcceptLine | Cmd::AcceptOrInsertLine { .. } | Cmd::Newline => {
+                    s.changes.end();
+                    s.out.write_and_flush("\n\x1b[K\r\x1b[A")?;
+                    s.refresh_line()?;
                     return Ok(None);
                 }
                 _ => {
@@ -171,6 +178,8 @@ fn complete_line<H: Helper>(
                 }
             }
         }
+        s.out.write_and_flush("\n\x1b[K\r\x1b[A")?;
+        s.refresh_line()?;
         Ok(Some(cmd))
     } else if CompletionType::List == config.completion_type() {
         if let Some(lcp) = longest_common_prefix(&candidates) {

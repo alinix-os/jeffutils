@@ -51,6 +51,36 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         return;
     }
 
+    // Intercept `exec` builtin command to replace current process
+    if expanded.commands.len() == 1 && expanded.commands[0].program == "exec" {
+        let cmd = &expanded.commands[0];
+        if cmd.args.is_empty() {
+            // exec with no command is used to apply redirections to the shell.
+            apply_current_redirects(&cmd.redirects, cmd.heredoc.as_deref());
+            state.last_exit_status = 0;
+            return;
+        }
+
+        // Apply redirections in-process
+        apply_current_redirects(&cmd.redirects, cmd.heredoc.as_deref());
+
+        let target_cmd = &cmd.args[0];
+        let target_args = &cmd.args[1..];
+
+        use std::os::unix::process::CommandExt;
+        let mut process = std::process::Command::new(target_cmd);
+        process.args(target_args);
+
+        let err = process.exec();
+        eprintln!("jsh: exec: {}: {}", target_cmd, err);
+        let exit_code = match err.kind() {
+            std::io::ErrorKind::NotFound => 127,
+            std::io::ErrorKind::PermissionDenied => 126,
+            _ => 1,
+        };
+        std::process::exit(exit_code);
+    }
+
     // Single command, no redirects/pipe: try builtins first (in-process).
     if expanded.commands.len() == 1 && expanded.commands[0].redirects.is_empty() {
         let cmd = &expanded.commands[0];
@@ -63,9 +93,22 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
 
         // User-defined shell functions win over external programs of the
         // same name (e.g. a `proj()` shortcut should shadow /usr/bin/proj).
-        if state.functions.contains_key(&cmd.program) {
+        if state.functions.lock().unwrap().contains_key(&cmd.program) {
             state.last_exit_status = state.call_function(&cmd.program, &cmd.args);
             return;
+        }
+
+        // Auto-cd feature: if command is exactly the name of a directory and has no args, cd into it
+        // Only trigger if the command is not a valid executable (so `clear` runs the command, not cd into `clear/`)
+        if cmd.args.is_empty() && !crate::builtin::is_executable(&cmd.program) {
+            let path = std::path::Path::new(&cmd.program);
+            if path.is_dir() {
+                let argv = vec!["cd".to_string(), cmd.program.clone()];
+                if let Some(status) = crate::builtin::handle_builtin(&argv, state) {
+                    state.last_exit_status = status;
+                    return;
+                }
+            }
         }
 
         // Not a builtin and not on PATH: if `.jshrc` sourced real bash
@@ -88,5 +131,104 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         return;
     }
 
-    state.last_exit_status = pipeline::execute_with(expanded, state.quiet_errors);
+    state.last_exit_status = pipeline::execute_with(expanded, state);
+}
+
+fn apply_current_redirects(redirects: &[crate::parser::lexer::Redirect], heredoc: Option<&str>) {
+    use crate::parser::lexer::RedirectTarget;
+    use std::os::unix::io::AsRawFd;
+
+    unsafe extern "C" {
+        fn dup2(oldfd: std::os::raw::c_int, newfd: std::os::raw::c_int) -> std::os::raw::c_int;
+    }
+
+    for r in redirects {
+        let target_fd = r.fd;
+
+        match &r.target {
+            RedirectTarget::File(path) => {
+                let path = crate::utils::expand_target(path);
+                if target_fd == 0 {
+                    // Input redirection
+                    if let Ok(file) = std::fs::OpenOptions::new().read(true).open(&path) {
+                        unsafe {
+                            dup2(file.as_raw_fd(), 0);
+                        }
+                    } else {
+                        eprintln!("jsh: {}: Arquivo não encontrado", path);
+                        std::process::exit(1);
+                    }
+                } else {
+                    // Output redirection
+                    let mut opts = std::fs::OpenOptions::new();
+                    opts.write(true).create(true);
+                    if r.append {
+                        opts.append(true);
+                    } else {
+                        opts.truncate(true);
+                    }
+                    if let Ok(file) = opts.open(&path) {
+                        let fd = file.as_raw_fd();
+                        if target_fd == -1 {
+                            // &> redirects both stdout and stderr
+                            unsafe {
+                                dup2(fd, 1);
+                                dup2(fd, 2);
+                            }
+                        } else {
+                            unsafe {
+                                dup2(fd, target_fd);
+                            }
+                        }
+                    } else {
+                        eprintln!("jsh: {}: Erro ao abrir arquivo", path);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            RedirectTarget::Fd(source_fd) => {
+                let fd_to_dup = if *source_fd == 1 && target_fd == 2 {
+                    1
+                } else if *source_fd == 2 && target_fd == 1 {
+                    2
+                } else {
+                    *source_fd
+                };
+                unsafe {
+                    if target_fd == -1 {
+                        dup2(fd_to_dup, 1);
+                        dup2(fd_to_dup, 2);
+                    } else {
+                        dup2(fd_to_dup, target_fd);
+                    }
+                }
+            }
+            RedirectTarget::HereString(s) => {
+                if target_fd == 0 || target_fd == -1 {
+                    use std::io::Write;
+                    if let Ok((read, mut write)) = std::os::unix::net::UnixStream::pair() {
+                        let _ = write.write_all(format!("{}\n", s).as_bytes());
+                        drop(write);
+                        unsafe {
+                            dup2(read.as_raw_fd(), 0);
+                        }
+                    }
+                }
+            }
+            RedirectTarget::Heredoc(_) => {
+                if let Some(body) = heredoc {
+                    if target_fd == 0 || target_fd == -1 {
+                        use std::io::Write;
+                        if let Ok((read, mut write)) = std::os::unix::net::UnixStream::pair() {
+                            let _ = write.write_all(body.as_bytes());
+                            drop(write);
+                            unsafe {
+                                dup2(read.as_raw_fd(), 0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

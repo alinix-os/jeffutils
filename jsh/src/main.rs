@@ -47,6 +47,21 @@ fn expand_history_refs(line: &str, history: &rustyline::history::DefaultHistory)
                     out.push_str("!!");
                 }
             }
+            Some('$') => {
+                chars.next();
+                if let Ok(Some(entry)) = history.get(
+                    history.len().wrapping_sub(1),
+                    rustyline::history::SearchDirection::Forward,
+                ) {
+                    if let Some(last_arg) = entry.entry.split_whitespace().last() {
+                        out.push_str(last_arg);
+                    } else {
+                        out.push_str("!$");
+                    }
+                } else {
+                    out.push_str("!$");
+                }
+            }
             Some(d) if d.is_ascii_digit() => {
                 let mut num = String::new();
                 while let Some(&d) = chars.peek() {
@@ -163,18 +178,30 @@ fn run_interactive(mut state: ShellState) {
     // Configure history file path ~/.jsh-history
     let history_path = state.home_dir.join(".jsh-history");
 
-    // Use Circular completion (Vim style) for cycling through candidates
+    // Use List completion (Bash style) so it doesn't auto-insert choices you have to delete
     let config = Config::builder()
-        .completion_type(CompletionType::Circular)
+        .completion_type(CompletionType::List)
         .completion_prompt_limit(100)
         .build();
 
     let mut rl = Editor::<JshHelper, DefaultHistory>::with_config(config)
         .expect("Erro ao inicializar editor de linha");
+
+    rl.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Up, rustyline::Modifiers::empty()),
+        rustyline::Cmd::HistorySearchBackward,
+    );
+    rl.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Down, rustyline::Modifiers::empty()),
+        rustyline::Cmd::HistorySearchForward,
+    );
+
     let helper = JshHelper {
         hinter: HistoryHinter::new(),
         completer: FilenameCompleter::new(),
         aliases: state.aliases.clone(),
+        shell_vars: state.shell_vars.clone(),
+        functions: state.functions.clone(),
     };
     rl.set_helper(Some(helper));
 
@@ -184,6 +211,16 @@ fn run_interactive(mut state: ShellState) {
     }
 
     loop {
+        // Emit OSC 7 to inform terminal emulator of the current working directory
+        // This allows Ctrl+Shift+T or Ctrl+Alt+N to open in the same directory.
+        if let Ok(pwd) = std::env::current_dir() {
+            let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
+            use std::io::Write;
+            let encoded_pwd = pwd.display().to_string().replace(" ", "%20");
+            print!("\x1b]7;file://{}{}\x1b\\", hostname, encoded_pwd);
+            let _ = std::io::stdout().flush();
+        }
+
         let prompt = state.render_prompt();
         let readline = rl.readline(&prompt);
         match readline {
@@ -204,7 +241,12 @@ fn run_interactive(mut state: ShellState) {
                 rl.add_history_entry(&expanded_line).ok();
                 let _ = rl.save_history(&history_path);
 
+                let start_time = std::time::Instant::now();
                 run_line_with(&mut state, &expanded_line, |prompt| rl.readline(prompt).ok());
+                let elapsed = start_time.elapsed();
+                if elapsed.as_secs_f64() >= 2.0 {
+                    println!("\x1B[38;5;240m(⏳ demorou {:.1}s)\x1B[0m", elapsed.as_secs_f64());
+                }
             }
             Err(ReadlineError::Interrupted) => {
                 println!("^C");
@@ -236,31 +278,50 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    // `jsh -c "commands" [name [args...]]`: run the command string directly,
-    // like `sh -c`. Per POSIX, the argument after the command string becomes
-    // `$0` and any following ones become the positional parameters.
-    if args.get(1).map(String::as_str) == Some("-c") {
-        let Some(command_string) = args.get(2).cloned() else {
-            eprintln!("jsh: -c: option requires an argument");
-            std::process::exit(2);
-        };
-        if let Some(name) = args.get(3) {
-            state.arg0 = name.clone();
+    let mut cmd_string: Option<String> = None;
+    let mut script_path: Option<String> = None;
+    let mut script_args: Vec<String> = Vec::new();
+
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "-c" {
+            if i + 1 < args.len() {
+                cmd_string = Some(args[i + 1].clone());
+                if i + 2 < args.len() {
+                    state.arg0 = args[i + 2].clone();
+                    script_args = args[i + 3..].to_vec();
+                }
+                break;
+            } else {
+                eprintln!("jsh: -c: option requires an argument");
+                std::process::exit(2);
+            }
+        } else if arg == "-l" || arg == "--login" {
+            // Ignore/skip login shell flags but don't treat them as script files
+            i += 1;
+        } else if arg.starts_with('-') {
+            // Skip other options to avoid failing
+            i += 1;
+        } else {
+            // First non-option argument is the script file path
+            script_path = Some(arg.clone());
+            script_args = args[i + 1..].to_vec();
+            break;
         }
+    }
+
+    state.set_positional_args(script_args);
+
+    if let Some(command_string) = cmd_string {
         state.load_jshrc();
         state.run_script_text(&command_string);
         std::process::exit(state.last_exit_status);
     }
 
-    let script_arg = args.get(1).cloned();
-    if let Some(ref path) = script_arg {
+    if let Some(path) = script_path {
         state.arg0 = path.clone();
-    }
-
-    // Load config from .jshrc
-    state.load_jshrc();
-
-    if let Some(path) = script_arg {
+        state.load_jshrc();
         match std::fs::File::open(&path) {
             Ok(f) => run_script(state, std::io::BufReader::new(f)),
             Err(e) => {
@@ -270,6 +331,9 @@ fn main() {
         }
         return;
     }
+
+    // Load config from .jshrc
+    state.load_jshrc();
 
     if !std::io::stdin().is_terminal() {
         run_script(state, std::io::stdin().lock());

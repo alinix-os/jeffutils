@@ -18,6 +18,7 @@ pub fn is_builtin(cmd: &str) -> bool {
     matches!(
         cmd,
         "cd" | "exit"
+            | "exec"
             | "jeofetch"
             | "help"
             | "version"
@@ -37,6 +38,9 @@ pub fn is_builtin(cmd: &str) -> bool {
 pub fn is_executable(cmd: &str) -> bool {
     if Path::new(cmd).is_file() {
         return true;
+    }
+    if cmd.contains('/') || cmd.contains(std::path::MAIN_SEPARATOR) {
+        return false;
     }
     let path_var = env::var_os("PATH").unwrap_or_default();
     for path in env::split_paths(&path_var) {
@@ -69,6 +73,7 @@ Builtins:
   unalias nome        Remove um alias
   source arquivo | .  Executa um script no shell atual
   true / false / :    Comandos no-op de status 0/1
+  exec [cmd] [args]   Substitui o processo do shell pelo comando especificado
   exit                Sai do jsh
 
 Sintaxe suportada: pipes (|), redirecionamentos (>, >>, <, <<, <<<, 2>, &>),
@@ -84,9 +89,9 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
     }
     let cmd = &args[0];
 
-    // Check if the command is a shortcut to go back: ".-1", "$PWD_BACK", "$PB"
-    let is_back_cmd = cmd == ".-1" || cmd == "$PWD_BACK" || cmd == "$PB";
-    let is_cd_back_cmd = cmd == "cd" && args.len() > 1 && (args[1] == ".-1" || args[1] == "$PWD_BACK" || args[1] == "$PB");
+    // Check if the command is a shortcut to go back: ".-1", "$PWD_BACK", "$PB", "-"
+    let is_back_cmd = cmd == ".-1" || cmd == "$PWD_BACK" || cmd == "$PB" || cmd == "-";
+    let is_cd_back_cmd = cmd == "cd" && args.len() > 1 && (args[1] == ".-1" || args[1] == "$PWD_BACK" || args[1] == "$PB" || args[1] == "-");
 
     if is_back_cmd || is_cd_back_cmd {
         if let Some(ref prev) = state.old_pwd {
@@ -112,7 +117,7 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
     if args.len() == 1
         && Path::new(cmd).is_dir()
         && !is_executable(cmd)
-        && !state.functions.contains_key(cmd)
+        && !state.functions.lock().unwrap().contains_key(cmd)
     {
         let current = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         if let Err(e) = env::set_current_dir(cmd) {
@@ -173,10 +178,13 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
             Some(0)
         }
         "set" => {
-            let mut names: Vec<&String> = state.shell_vars.keys().collect();
+            let map = state.shell_vars.lock().unwrap();
+            let mut names: Vec<String> = map.keys().cloned().collect();
             names.sort();
             for name in names {
-                println!("{}={}", name, state.shell_vars[name]);
+                if let Some(val) = map.get(&name) {
+                    println!("{}={}", name, val);
+                }
             }
             Some(0)
         }
@@ -237,6 +245,23 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
                 .and_then(|s| s.parse::<i32>().ok())
                 .unwrap_or(0);
             std::process::exit(code);
+        }
+        "exec" => {
+            if args.len() < 2 {
+                Some(0)
+            } else {
+                use std::os::unix::process::CommandExt;
+                let mut cmd = std::process::Command::new(&args[1]);
+                cmd.args(&args[2..]);
+                let err = cmd.exec();
+                eprintln!("jsh: exec: {}: {}", args[1], err);
+                let exit_code = match err.kind() {
+                    std::io::ErrorKind::NotFound => 127,
+                    std::io::ErrorKind::PermissionDenied => 126,
+                    _ => 1,
+                };
+                std::process::exit(exit_code);
+            }
         }
         _ => None,
     }

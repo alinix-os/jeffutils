@@ -18,7 +18,7 @@ pub struct ShellState {
     pub old_pwd: Option<PathBuf>,
     /// Shell-local variables (`NAME=value`), distinct from process env vars.
     /// Looked up before falling back to `env::var`.
-    pub shell_vars: HashMap<String, String>,
+    pub shell_vars: Arc<Mutex<HashMap<String, String>>>,
     /// Names of shell vars that have been `export`ed to the process env.
     pub exported: HashSet<String>,
     /// Name jsh was invoked as / script path, used for `$0`.
@@ -39,7 +39,7 @@ pub struct ShellState {
     /// User-defined shell functions (`name() { body }`), keyed by name.
     /// The body is the raw text between `{` and `}`, run as a nested
     /// script with `$1`, `$2`, ... bound to the call's arguments.
-    pub functions: HashMap<String, String>,
+    pub functions: Arc<Mutex<HashMap<String, String>>>,
     /// Stack of positional-parameter frames for nested function calls;
     /// the top frame is used to resolve `$1`, `$2`, `$@`, `$#` while a
     /// function body is executing.
@@ -79,12 +79,12 @@ impl ShellState {
             init_info: true,
             aliases: aliases_map,
             old_pwd: None,
-            shell_vars: HashMap::new(),
+            shell_vars: Arc::new(Mutex::new(HashMap::new())),
             exported: HashSet::new(),
             arg0: "jsh".to_string(),
             quiet_errors: false,
             bash_sourced_files: Vec::new(),
-            functions: HashMap::new(),
+            functions: Arc::new(Mutex::new(HashMap::new())),
             positional_stack: Vec::new(),
             jshrc_mtime: None,
         }
@@ -170,6 +170,22 @@ export PATH=$PATH:/usr/local/bin
             script.push_str(&f.to_string_lossy().replace('\'', "'\\''"));
             script.push_str("' >/dev/null 2>&1; ");
         }
+
+        let mut check_script = script.clone();
+        check_script.push_str("type -t ");
+        check_script.push_str(program);
+        check_script.push_str(" >/dev/null 2>&1");
+
+        let check_status = Command::new("bash")
+            .arg("-c")
+            .arg(&check_script)
+            .status()
+            .ok()?;
+
+        if !check_status.success() {
+            return None;
+        }
+
         script.push_str(program);
         for a in args {
             script.push(' ');
@@ -242,7 +258,7 @@ export PATH=$PATH:/usr/local/bin
                     body.push('\n');
                 }
 
-                self.functions.insert(name, body.trim().to_string());
+                self.functions.lock().unwrap().insert(name, body.trim().to_string());
                 continue;
             }
 
@@ -289,10 +305,14 @@ export PATH=$PATH:/usr/local/bin
         Some((name.to_string(), line))
     }
 
+    pub fn set_positional_args(&mut self, args: Vec<String>) {
+        self.positional_stack = vec![args];
+    }
+
     /// Runs a user-defined function's body with `$1`, `$2`, ... bound to
     /// `args`, returning the function's final exit status.
     pub fn call_function(&mut self, name: &str, args: &[String]) -> i32 {
-        let Some(body) = self.functions.get(name).cloned() else {
+        let Some(body) = self.functions.lock().unwrap().get(name).cloned() else {
             return 127;
         };
         self.positional_stack.push(args.to_vec());
@@ -348,8 +368,8 @@ export PATH=$PATH:/usr/local/bin
             }
             _ => {}
         }
-        if let Some(v) = self.shell_vars.get(name) {
-            return v.clone();
+        if let Some(v) = self.shell_vars.lock().unwrap().get(name).cloned() {
+            return v;
         }
         env::var(name).unwrap_or_default()
     }
@@ -385,7 +405,7 @@ export PATH=$PATH:/usr/local/bin
         if name == "INIT_INFO" {
             self.init_info = value == "true";
         }
-        self.shell_vars.insert(name.to_string(), value.to_string());
+        self.shell_vars.lock().unwrap().insert(name.to_string(), value.to_string());
         if self.exported.contains(name) {
             unsafe {
                 env::set_var(name, value);
@@ -395,11 +415,11 @@ export PATH=$PATH:/usr/local/bin
 
     pub fn export_var(&mut self, name: &str, value: Option<&str>) {
         if let Some(v) = value {
-            self.shell_vars.insert(name.to_string(), v.to_string());
+            self.shell_vars.lock().unwrap().insert(name.to_string(), v.to_string());
             unsafe {
                 env::set_var(name, v);
             }
-        } else if let Some(v) = self.shell_vars.get(name).cloned() {
+        } else if let Some(v) = self.shell_vars.lock().unwrap().get(name).cloned() {
             unsafe {
                 env::set_var(name, &v);
             }
@@ -408,7 +428,7 @@ export PATH=$PATH:/usr/local/bin
     }
 
     pub fn unset_var(&mut self, name: &str) {
-        self.shell_vars.remove(name);
+        self.shell_vars.lock().unwrap().remove(name);
         self.exported.remove(name);
         unsafe {
             env::remove_var(name);

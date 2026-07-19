@@ -159,7 +159,8 @@ fn spawn_one(
     process
 }
 
-pub fn execute_with(pipe: ExpandedPipeline, quiet: bool) -> i32 {
+pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) -> i32 {
+    let quiet = state.quiet_errors;
     let n = pipe.commands.len();
     if n == 0 {
         return 0;
@@ -177,6 +178,11 @@ pub fn execute_with(pipe: ExpandedPipeline, quiet: bool) -> i32 {
             Err(e) => {
                 if !quiet {
                     eprintln!("jsh: {}: {}", cmd.program, e);
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        if let Some(suggestion) = crate::utils::suggest_command(&cmd.program, state) {
+                            eprintln!("Você quis dizer '{}'?", suggestion);
+                        }
+                    }
                 }
                 return 127;
             }
