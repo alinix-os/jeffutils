@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "aly",
     "arrange",
     "b2sum",
     "blake2",
