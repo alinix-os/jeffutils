@@ -16,6 +16,7 @@ use shell::Shell;
 use std::process::exit;
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("sh", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = std::env::args().collect();
     let mut sh = Shell::new();
 

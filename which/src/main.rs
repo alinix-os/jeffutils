@@ -19,6 +19,7 @@ fn find_in_path(cmd: &str) -> Option<String> {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("which", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() {
         println!("Uso: which <comando>");

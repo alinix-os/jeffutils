@@ -1,4 +1,5 @@
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("umount", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let mut args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         args.insert(1, "unmount".into());

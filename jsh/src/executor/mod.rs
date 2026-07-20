@@ -37,6 +37,14 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
     if andor.pipeline.commands.len() == 1 {
         let cmd = &andor.pipeline.commands[0];
         if cmd.args.is_empty() && cmd.redirects.is_empty() {
+            if !cmd.env_vars.is_empty() && (cmd.program.segments.is_empty() || ShellState::as_assignment(&cmd.program).is_some()) {
+                for (name, value) in &cmd.env_vars {
+                    let expanded_value = state.expand_word_single(&crate::parser::Word::literal(value));
+                    state.set_var(name, &expanded_value);
+                }
+                state.last_exit_status = 0;
+                return;
+            }
             if let Some((name, value)) = ShellState::as_assignment(&cmd.program) {
                 let expanded_value = state.expand_word_single(&crate::parser::Word::literal(value));
                 state.set_var(&name, &expanded_value);
@@ -70,6 +78,9 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         use std::os::unix::process::CommandExt;
         let mut process = std::process::Command::new(target_cmd);
         process.args(target_args);
+        for (k, v) in &cmd.env_vars {
+            process.env(k, v);
+        }
 
         let err = process.exec();
         eprintln!("jsh: exec: {}: {}", target_cmd, err);
@@ -86,7 +97,24 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         let cmd = &expanded.commands[0];
         let mut argv = vec![cmd.program.clone()];
         argv.extend(cmd.args.clone());
+
+        let prev_vars: Vec<(String, Option<String>)> = cmd
+            .env_vars
+            .iter()
+            .map(|(k, _)| (k.clone(), state.shell_vars.lock().unwrap().get(k).cloned()))
+            .collect();
+        for (k, v) in &cmd.env_vars {
+            state.set_var(k, v);
+        }
+
         if let Some(status) = crate::builtin::handle_builtin(&argv, state) {
+            for (k, old_v) in prev_vars {
+                if let Some(val) = old_v {
+                    state.set_var(&k, &val);
+                } else {
+                    state.unset_var(&k);
+                }
+            }
             state.last_exit_status = status;
             return;
         }
@@ -94,7 +122,15 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         // User-defined shell functions win over external programs of the
         // same name (e.g. a `proj()` shortcut should shadow /usr/bin/proj).
         if state.functions.lock().unwrap().contains_key(&cmd.program) {
-            state.last_exit_status = state.call_function(&cmd.program, &cmd.args);
+            let status = state.call_function(&cmd.program, &cmd.args);
+            for (k, old_v) in prev_vars {
+                if let Some(val) = old_v {
+                    state.set_var(&k, &val);
+                } else {
+                    state.unset_var(&k);
+                }
+            }
+            state.last_exit_status = status;
             return;
         }
 

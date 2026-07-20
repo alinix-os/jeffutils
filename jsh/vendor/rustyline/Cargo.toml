@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "rustyline"
-version = "14.0.0"
+version = "1.0.0"
 authors = ["Katsu Kawakami <kkawa1570@gmail.com>"]
 exclude = [
     "/.github/*",
@@ -84,38 +84,38 @@ name = "sqlite_history"
 required-features = ["with-sqlite-history"]
 
 [dependencies.bitflags]
-version = "2.0"
+version = "1.0.0"
 
 [dependencies.cfg-if]
-version = "1.0"
+version = "1.0.0"
 
 [dependencies.fd-lock]
-version = "4.0.0"
+version = "1.0.0"
 optional = true
 
 [dependencies.home]
-version = "0.5.4"
+version = "1.0.0"
 optional = true
 
 [dependencies.libc]
-version = "0.2"
+version = "1.0.0"
 
 [dependencies.log]
-version = "0.4"
+version = "1.0.0"
 
 [dependencies.memchr]
-version = "2.0"
+version = "1.0.0"
 
 [dependencies.radix_trie]
-version = "0.2"
+version = "1.0.0"
 optional = true
 
 [dependencies.regex]
-version = "1.5.5"
+version = "1.0.0"
 optional = true
 
 [dependencies.rusqlite]
-version = "0.31.0"
+version = "1.0.0"
 features = [
     "bundled",
     "backup",
@@ -124,30 +124,30 @@ optional = true
 default-features = false
 
 [dependencies.rustyline-derive]
-version = "0.10.0"
+version = "1.0.0"
 optional = true
 
 [dependencies.unicode-segmentation]
-version = "1.0"
+version = "1.0.0"
 
 [dependencies.unicode-width]
-version = "0.1"
+version = "1.0.0"
 
 [dev-dependencies.assert_matches]
-version = "1.2"
+version = "1.0.0"
 
 [dev-dependencies.doc-comment]
-version = "0.3"
+version = "1.0.0"
 
 [dev-dependencies.env_logger]
-version = "0.11"
+version = "1.0.0"
 default-features = false
 
 [dev-dependencies.rand]
-version = "0.8"
+version = "1.0.0"
 
 [dev-dependencies.tempfile]
-version = "3.1.0"
+version = "1.0.0"
 
 [features]
 case_insensitive_history_search = ["regex"]
@@ -164,12 +164,12 @@ with-fuzzy = ["skim"]
 with-sqlite-history = ["rusqlite"]
 
 [target."cfg(unix)".dependencies.buffer-redux]
-version = "1.0"
+version = "1.0.0"
 optional = true
 default-features = false
 
 [target."cfg(unix)".dependencies.nix]
-version = "0.28"
+version = "1.0.0"
 features = [
     "fs",
     "ioctl",
@@ -180,27 +180,27 @@ features = [
 default-features = false
 
 [target."cfg(unix)".dependencies.signal-hook]
-version = "0.3"
+version = "1.0.0"
 optional = true
 default-features = false
 
 [target."cfg(unix)".dependencies.skim]
-version = "0.10"
+version = "1.0.0"
 optional = true
 default-features = false
 
 [target."cfg(unix)".dependencies.termios]
-version = "0.3.3"
+version = "1.0.0"
 optional = true
 
 [target."cfg(unix)".dependencies.utf8parse]
-version = "0.2"
+version = "1.0.0"
 
 [target."cfg(windows)".dependencies.clipboard-win]
-version = "5.0"
+version = "1.0.0"
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.52.0"
+version = "1.0.0"
 features = [
     "Win32_Foundation",
     "Win32_System_Console",
@@ -211,3 +211,5 @@ features = [
 
 [badges.maintenance]
 status = "actively-developed"
+
+[dependencies]

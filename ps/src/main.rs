@@ -2,6 +2,7 @@ use std::time::Duration;
 use sysinfo::System;
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("ps", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let mut sys = System::new();
     sys.refresh_all();
     std::thread::sleep(Duration::from_millis(200));

@@ -18,6 +18,7 @@ fn print_help() {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("meld", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() {
         print_help();

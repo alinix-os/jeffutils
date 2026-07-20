@@ -35,6 +35,7 @@ fn head_reader<R: BufRead>(mut reader: R, num_lines: usize) -> io::Result<()> {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("head", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
 
     for arg in &args {

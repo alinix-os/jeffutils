@@ -123,6 +123,7 @@ fn dir_size(path: &Path, opts: &Options, depth: usize) -> u64 {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("spaceused", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let opts = parse_args();
 
     let mut grand_total: u64 = 0;

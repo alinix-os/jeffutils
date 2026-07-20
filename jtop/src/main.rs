@@ -9,6 +9,7 @@ use crossterm::{
 };
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("jtop", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let mut sys = System::new_all();
     let mut stdout = io::stdout();
     let delay = Duration::from_secs(2);

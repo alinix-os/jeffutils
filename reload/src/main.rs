@@ -1,6 +1,7 @@
 use zbus::blocking::Connection;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("reload", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
 

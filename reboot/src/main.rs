@@ -3,6 +3,7 @@ fn print_usage() {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("reboot", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     for arg in &args {

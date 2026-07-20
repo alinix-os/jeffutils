@@ -2,6 +2,7 @@
 members = [
     "arrange",
     "b2sum",
+    "blake2",
     "blockcopy",
     "bytedump",
     "calculate",
@@ -45,6 +46,7 @@ members = [
     "jobs",
     "jsh",
     "jtop",
+    "jutils-core",
     "jail",
     "kill",
     "kinfo",

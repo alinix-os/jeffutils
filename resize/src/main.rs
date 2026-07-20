@@ -122,6 +122,7 @@ fn resize_file(path: &str, target_size: u64, no_create: bool) {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("resize", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let opts = parse_args();
     let target_size = opts.size.unwrap();
 

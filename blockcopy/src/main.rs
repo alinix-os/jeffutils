@@ -147,6 +147,7 @@ fn do_copy<R: Read, W: Write>(
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("blockcopy", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let opts = parse_args();
 
     if opts.if_file.is_empty() {

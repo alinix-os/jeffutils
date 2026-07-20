@@ -43,6 +43,7 @@ fn walk_dir(path: &Path, prefix: &str, max_depth: Option<usize>, depth: usize, v
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("tree", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let mut root = ".".to_string();

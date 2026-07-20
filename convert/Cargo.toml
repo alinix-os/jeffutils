@@ -1,8 +1,11 @@
 [package]
 name = "convert"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [[bin]]
 name = "convert"
 path = "src/main.rs"
+
+[dependencies]
+jutils-core = { path = "../jutils-core" }

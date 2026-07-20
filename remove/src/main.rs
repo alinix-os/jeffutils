@@ -52,6 +52,7 @@ fn confirm(prompt: &str) -> bool {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("remove", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let argv: Vec<ARGS> = std::env::args().collect::<Vec<String>>()[1..].iter().filter_map(|s| ARGS::from_str(s).ok()).collect();
 
     if argv.is_empty() {

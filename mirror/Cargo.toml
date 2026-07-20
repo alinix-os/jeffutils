@@ -1,9 +1,10 @@
 [package]
 name = "mirror"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [dependencies]
+jutils-core = { path = "../jutils-core" }
 libc = "0.2"
 
 [[bin]]

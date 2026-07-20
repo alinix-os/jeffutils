@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::io::OwnedFd;
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 
 use crate::parser::lexer::RedirectTarget;
@@ -84,6 +85,9 @@ fn spawn_one(
 ) -> Command {
     let mut process = Command::new(&cmd.program);
     process.args(&cmd.args);
+    for (k, v) in &cmd.env_vars {
+        process.env(k, v);
+    }
 
     let mut stdin_r = None;
     let mut stdout_r = None;
@@ -165,16 +169,61 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
     if n == 0 {
         return 0;
     }
+
+    // Block SIGINT in the shell while children run so Ctrl+C kills only
+    // the foreground process group, not the shell itself.
+    let is_tty = unsafe { libc::isatty(libc::STDIN_FILENO) != 0 };
+    let mut old_sigint: usize = 0;
+    if is_tty {
+        unsafe {
+            old_sigint = libc::signal(libc::SIGINT, libc::SIG_IGN);
+        }
+    }
+
     let mut children = Vec::new();
     let mut next_stdin: Option<Stdio> = None;
+    let mut pgid = 0;
 
     for i in 0..n {
         let cmd = &pipe.commands[i];
         let piped = i < n - 1;
         let mut process = spawn_one(cmd, piped, &mut next_stdin, false);
 
+        unsafe {
+            if i == 0 {
+                process.pre_exec(|| {
+                    let _ = libc::setpgid(0, 0);
+                    libc::signal(libc::SIGTTOU, libc::SIG_DFL);
+                    libc::signal(libc::SIGTTIN, libc::SIG_DFL);
+                    libc::signal(libc::SIGTSTP, libc::SIG_DFL);
+                    libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                    Ok(())
+                });
+            } else {
+                let first_pgid = pgid;
+                process.pre_exec(move || {
+                    let _ = libc::setpgid(0, first_pgid);
+                    libc::signal(libc::SIGTTOU, libc::SIG_DFL);
+                    libc::signal(libc::SIGTTIN, libc::SIG_DFL);
+                    libc::signal(libc::SIGTSTP, libc::SIG_DFL);
+                    libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                    Ok(())
+                });
+            }
+        }
+
         match process.spawn() {
-            Ok(child) => children.push(child),
+            Ok(child) => {
+                let child_id = child.id() as libc::pid_t;
+                if i == 0 {
+                    pgid = child_id;
+                }
+                unsafe {
+                    let target = if i == 0 { child_id } else { pgid };
+                    let _ = libc::setpgid(child_id, target);
+                }
+                children.push(child);
+            }
             Err(e) => {
                 if !quiet {
                     eprintln!("jsh: {}: {}", cmd.program, e);
@@ -184,8 +233,20 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
                         }
                     }
                 }
+                if is_tty {
+                    unsafe {
+                        libc::tcsetpgrp(libc::STDIN_FILENO, libc::getpgrp());
+                        libc::signal(libc::SIGINT, old_sigint);
+                    }
+                }
                 return 127;
             }
+        }
+    }
+
+    if is_tty && pgid != 0 {
+        unsafe {
+            libc::tcsetpgrp(libc::STDIN_FILENO, pgid);
         }
     }
 
@@ -194,6 +255,13 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
         match child.wait() {
             Ok(status) => last_status = status.code().unwrap_or(0),
             Err(_) => last_status = 1,
+        }
+    }
+
+    if is_tty {
+        unsafe {
+            libc::tcsetpgrp(libc::STDIN_FILENO, libc::getpgrp());
+            libc::signal(libc::SIGINT, old_sigint);
         }
     }
 

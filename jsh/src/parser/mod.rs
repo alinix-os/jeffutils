@@ -42,6 +42,8 @@ impl Word {
 pub struct Command {
     pub program: Word,
     pub args: Vec<Word>,
+    /// Leading `NAME=value` assignments scoped to this command.
+    pub env_vars: Vec<(String, String)>,
     pub redirects: Vec<lexer::Redirect>,
     /// Body of a heredoc (`<< DELIM`); `None` unless the command reads a heredoc.
     pub heredoc: Option<String>,
@@ -80,6 +82,7 @@ pub struct CommandList {
 pub struct ExpandedCommand {
     pub program: String,
     pub args: Vec<String>,
+    pub env_vars: Vec<(String, String)>,
     pub redirects: Vec<lexer::Redirect>,
     pub heredoc: Option<String>,
 }

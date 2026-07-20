@@ -54,6 +54,7 @@ fn ranges_contain(ranges: &[(usize, usize)], pos: usize) -> bool {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("slice", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut delimiter: String = "\t".to_string();
     let mut field_list: Option<String> = None;

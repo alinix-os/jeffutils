@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::Instant;
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("time", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
     for arg in &args {
         if arg == "-h" || arg == "--help" {

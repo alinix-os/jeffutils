@@ -63,6 +63,7 @@ fn parse_args() -> (Vec<String>, Option<String>) {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("diskfree", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let (filesystems, filter_type) = parse_args();
 
     let mounts_content = fs::read_to_string("/proc/mounts").unwrap_or_else(|e| {

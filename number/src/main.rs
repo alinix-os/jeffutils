@@ -17,6 +17,7 @@ fn print_help() {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("number", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut body_style = "a".to_string();
     let mut separator = "\t".to_string();

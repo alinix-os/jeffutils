@@ -600,9 +600,16 @@ export PATH=$PATH:/usr/local/bin
                 .iter()
                 .any(|r| matches!(r.target, RedirectTarget::Heredoc(_)));
 
+            let expanded_env_vars: Vec<(String, String)> = cmd
+                .env_vars
+                .iter()
+                .map(|(k, v)| (k.clone(), self.expand_str(v)))
+                .collect();
+
             commands.push(ExpandedCommand {
                 program: final_words.remove(0),
                 args: final_words,
+                env_vars: expanded_env_vars,
                 redirects,
                 heredoc: if is_heredoc {
                     heredoc_body.map(|s| s.to_string())

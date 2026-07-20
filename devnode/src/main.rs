@@ -22,6 +22,7 @@ fn parse_mode(s: &str) -> Result<u32, String> {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("devnode", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
 
     let mut mode: u32 = 0o660;

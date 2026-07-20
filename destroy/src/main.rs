@@ -215,6 +215,7 @@ fn destroy_file(path: &str, opts: &Options) {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("destroy", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let opts = parse_args();
 
     for file in &opts.files {

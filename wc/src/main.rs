@@ -130,6 +130,7 @@ fn print_counts(counts: &Counts, show_lines: bool, show_words: bool, show_bytes:
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("wc", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
 
     for arg in &args {

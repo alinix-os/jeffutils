@@ -6,6 +6,7 @@ mod shell;
 mod utils;
 
 use std::io::{BufRead, IsTerminal};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
@@ -17,6 +18,12 @@ use crate::builtin::run_jeofetch;
 use crate::completion::JshHelper;
 use crate::parser::lexer::RedirectTarget;
 use crate::shell::ShellState;
+
+static SIGINT_FLAG: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn sigint_handler(_sig: i32) {
+    SIGINT_FLAG.store(true, Ordering::SeqCst);
+}
 
 /// Expands `!!`, `!n`, and `!prefix` history references in a raw input
 /// line, using the rustyline history as the source of past commands.
@@ -175,6 +182,21 @@ pub fn run_line_with(state: &mut ShellState, line: &str, mut read_more: impl FnM
 }
 
 fn run_interactive(mut state: ShellState) {
+    unsafe {
+        libc::signal(libc::SIGINT, sigint_handler as *const () as usize);
+        
+        // Ignore job control signals so the shell doesn't get suspended
+        libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+        libc::signal(libc::SIGTTIN, libc::SIG_IGN);
+        libc::signal(libc::SIGTSTP, libc::SIG_IGN);
+        libc::signal(libc::SIGQUIT, libc::SIG_IGN);
+
+        // Put ourselves in our own process group if we are the foreground process
+        let pid = libc::getpid();
+        let _ = libc::setpgid(pid, pid);
+        let _ = libc::tcsetpgrp(libc::STDIN_FILENO, pid);
+    }
+
     // Configure history file path ~/.jsh-history
     let history_path = state.home_dir.join(".jsh-history");
 
@@ -269,6 +291,9 @@ fn run_interactive(mut state: ShellState) {
                 let show_timing = state.get_var("SHOW_TIMING") != "false";
                 let start_time = std::time::Instant::now();
                 run_line_with(&mut state, &expanded_line, |prompt| rl.readline(prompt).ok());
+                if SIGINT_FLAG.swap(false, Ordering::SeqCst) {
+                    println!("^C");
+                }
                 if show_timing {
                     let elapsed = start_time.elapsed();
                     if elapsed.as_secs_f64() >= 2.0 {
@@ -302,6 +327,7 @@ fn run_script<R: BufRead>(mut state: ShellState, mut reader: R) {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("jsh", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let mut state = ShellState::new();
 
     let args: Vec<String> = std::env::args().collect();
@@ -377,4 +403,16 @@ fn main() {
     }
 
     run_interactive(state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_env_var_execution() {
+        let mut state = ShellState::new();
+        run_line_with(&mut state, "TEST_VAR=hello", |_| None);
+        assert_eq!(state.get_var("TEST_VAR"), "hello");
+    }
 }

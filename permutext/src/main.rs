@@ -76,6 +76,7 @@ fn process_text(text: &str, width: usize) {
 }
 
 fn main() {
+if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("permutext", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let args: Vec<String> = env::args().skip(1).collect();
 
     let mut width: usize = 72;
