@@ -56,8 +56,30 @@ fn expand_var(name: &str, lookup: &Lookup, last_status: i32) -> Option<String> {
     match name {
         "?" => return Some(last_status.to_string()),
         "$" => return Some(std::process::id().to_string()),
-        _ => lookup(name),
+        _ => {}
     }
+
+    if let Some((var_name, default)) = name.split_once(":-") {
+        let val = lookup(var_name);
+        if let Some(v) = val {
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+        return Some(default.to_string());
+    }
+
+    if let Some((var_name, alt)) = name.split_once(":+") {
+        let val = lookup(var_name);
+        if let Some(v) = val {
+            if !v.is_empty() {
+                return Some(alt.to_string());
+            }
+        }
+        return Some(String::new());
+    }
+
+    lookup(name)
 }
 
 /// Expand a `$name`, `${name}`, `$?`, `$$` occurrence starting at `s[i]`.
@@ -445,4 +467,66 @@ pub fn tokenize(input: &str) -> Result<Vec<Tok>, String> {
 
     Ok(toks)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tokenize_basic() {
+        let tokens = tokenize("echo hello world").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Tok::Word("echo".to_string()),
+                Tok::Word("hello".to_string()),
+                Tok::Word("world".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_pipeline_and_redirection() {
+        let tokens = tokenize("ls -l | grep test > output.txt").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Tok::Word("ls".to_string()),
+                Tok::Word("-l".to_string()),
+                Tok::Pipe,
+                Tok::Word("grep".to_string()),
+                Tok::Word("test".to_string()),
+                Tok::Redir(RedirOp::Out),
+                Tok::Word("output.txt".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_expand_word() {
+        let lookup = |name: &str| match name {
+            "FOO" => Some("bar".to_string()),
+            _ => None,
+        };
+        let expanded = expand_word("\"$FOO/baz\"", &lookup, 0).unwrap();
+        assert_eq!(expanded, vec!["bar/baz".to_string()]);
+    }
+
+    #[test]
+    fn test_expand_parameter_defaults() {
+        let lookup = |name: &str| match name {
+            "FOO" => Some("bar".to_string()),
+            _ => None,
+        };
+        let fallback = expand_word("\"${UNSET:-fallback}\"", &lookup, 0).unwrap();
+        assert_eq!(fallback, vec!["fallback".to_string()]);
+
+        let set_val = expand_word("\"${FOO:-fallback}\"", &lookup, 0).unwrap();
+        assert_eq!(set_val, vec!["bar".to_string()]);
+
+        let alt_val = expand_word("\"${FOO:+alternative}\"", &lookup, 0).unwrap();
+        assert_eq!(alt_val, vec!["alternative".to_string()]);
+    }
+}
+
 

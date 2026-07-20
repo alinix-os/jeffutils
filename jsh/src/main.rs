@@ -230,6 +230,16 @@ fn run_interactive(mut state: ShellState) {
             }
         }
     }
+    struct RightArrowHandler;
+    impl rustyline::ConditionalEventHandler for RightArrowHandler {
+        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+            if ctx.pos() == ctx.line().len() {
+                Some(rustyline::Cmd::CompleteHint)
+            } else {
+                None
+            }
+        }
+    }
 
     rl.bind_sequence(
         rustyline::KeyEvent(rustyline::KeyCode::Up, rustyline::Modifiers::empty()),
@@ -238,6 +248,14 @@ fn run_interactive(mut state: ShellState) {
     rl.bind_sequence(
         rustyline::KeyEvent(rustyline::KeyCode::Down, rustyline::Modifiers::empty()),
         rustyline::EventHandler::Conditional(Box::new(DownArrowHandler)),
+    );
+    rl.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Right, rustyline::Modifiers::empty()),
+        rustyline::EventHandler::Conditional(Box::new(RightArrowHandler)),
+    );
+    rl.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Char('f'), rustyline::Modifiers::CTRL),
+        rustyline::Cmd::CompleteHint,
     );
 
     let helper = JshHelper {

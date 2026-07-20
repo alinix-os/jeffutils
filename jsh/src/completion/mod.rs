@@ -42,6 +42,9 @@ fn known_subcommands(cmd: &str) -> Option<&'static [&'static str]> {
             "update", "upgrade", "install", "remove", "purge", "autoremove",
             "search", "show", "list", "edit-sources", "help"
         ],
+        "aly" => &["run", "comp", "help", "version"],
+        "apg" => &["install", "remove", "update", "publish", "init", "run", "list", "search"],
+        "cutils" => &["install", "uninstall", "list", "status", "which"],
         _ => return None,
     })
 }
@@ -55,6 +58,9 @@ fn known_options(cmd: &str) -> Option<&'static [&'static str]> {
         "cargo" => &["--help", "--version", "--list", "--verbose", "--quiet", "--color"],
         "dnf" | "yum" => &["-y", "--assumeyes", "-q", "--quiet", "-v", "--verbose", "--help", "--version", "--enablerepo=", "--disablerepo="],
         "apt" | "apt-get" => &["-y", "--yes", "-q", "--quiet", "--help", "--version", "-d", "--download-only", "--purge", "--reinstall"],
+        "aly" => &["--help", "--version", "--release", "--verbose"],
+        "apg" => &["--help", "--version", "--global", "-g"],
+        "cutils" => &["--help", "--version", "-d", "--dir"],
         _ => return None,
     })
 }
@@ -136,23 +142,26 @@ impl Completer for JshHelper {
                 "alias", "unalias", "source", "true", "false", ".-1", "$PWD_BACK", "$PB",
             ];
             for b in builtins {
-                if b.to_lowercase().starts_with(&wl) {
-                    candidates.push(Pair { display: b.to_string(), replacement: b.to_string() });
+                let bl = b.to_lowercase();
+                if bl.starts_with(&wl) || (!wl.is_empty() && bl.contains(&wl)) {
+                    candidates.push(Pair { display: b.to_string(), replacement: format!("{} ", b) });
                 }
             }
 
             if let Ok(aliases) = self.aliases.lock() {
                 for name in aliases.keys() {
-                    if name.to_lowercase().starts_with(&wl) {
-                        candidates.push(Pair { display: name.clone(), replacement: name.clone() });
+                    let nl = name.to_lowercase();
+                    if nl.starts_with(&wl) || (!wl.is_empty() && nl.contains(&wl)) {
+                        candidates.push(Pair { display: name.clone(), replacement: format!("{} ", name) });
                     }
                 }
             }
 
             if let Ok(functions) = self.functions.lock() {
                 for name in functions.keys() {
-                    if name.to_lowercase().starts_with(&wl) {
-                        candidates.push(Pair { display: name.clone(), replacement: name.clone() });
+                    let nl = name.to_lowercase();
+                    if nl.starts_with(&wl) || (!wl.is_empty() && nl.contains(&wl)) {
+                        candidates.push(Pair { display: name.clone(), replacement: format!("{} ", name) });
                     }
                 }
             }
@@ -162,14 +171,22 @@ impl Completer for JshHelper {
                 if let Ok(entries) = fs::read_dir(path) {
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().into_owned();
-                        if name.to_lowercase().starts_with(&wl) && entry.path().is_file() {
-                            candidates.push(Pair { display: name.clone(), replacement: name });
+                        let nl = name.to_lowercase();
+                        if (nl.starts_with(&wl) || (!wl.is_empty() && nl.contains(&wl))) && entry.path().is_file() {
+                            candidates.push(Pair { display: name.clone(), replacement: format!("{} ", name) });
                         }
                     }
                 }
             }
 
-            candidates.sort_by(|a, b| a.display.cmp(&b.display));
+            candidates.sort_by(|a, b| {
+                let a_starts = a.display.to_lowercase().starts_with(&wl);
+                let b_starts = b.display.to_lowercase().starts_with(&wl);
+                if a_starts != b_starts {
+                    return b_starts.cmp(&a_starts);
+                }
+                a.display.cmp(&b.display)
+            });
             candidates.dedup_by(|a, b| a.display == b.display);
             if !candidates.is_empty() {
                 return Ok((word_start, candidates));
@@ -182,11 +199,21 @@ impl Completer for JshHelper {
                 let wl = word.to_lowercase();
                 let mut candidates: Vec<Pair> = subs
                     .iter()
-                    .filter(|s| s.to_lowercase().starts_with(&wl))
-                    .map(|s| Pair { display: s.to_string(), replacement: s.to_string() })
+                    .filter(|s| {
+                        let sl = s.to_lowercase();
+                        sl.starts_with(&wl) || (!wl.is_empty() && sl.contains(&wl))
+                    })
+                    .map(|s| Pair { display: s.to_string(), replacement: format!("{} ", s) })
                     .collect();
                 if !candidates.is_empty() {
-                    candidates.sort_by(|a, b| a.display.cmp(&b.display));
+                    candidates.sort_by(|a, b| {
+                        let a_starts = a.display.to_lowercase().starts_with(&wl);
+                        let b_starts = b.display.to_lowercase().starts_with(&wl);
+                        if a_starts != b_starts {
+                            return b_starts.cmp(&a_starts);
+                        }
+                        a.display.cmp(&b.display)
+                    });
                     return Ok((word_start, candidates));
                 }
             }
@@ -198,11 +225,24 @@ impl Completer for JshHelper {
                 let wl = word.to_lowercase();
                 let mut candidates: Vec<Pair> = opts
                     .iter()
-                    .filter(|s| s.to_lowercase().starts_with(&wl))
-                    .map(|s| Pair { display: s.to_string(), replacement: s.to_string() })
+                    .filter(|s| {
+                        let sl = s.to_lowercase();
+                        sl.starts_with(&wl) || (!wl.is_empty() && sl.contains(&wl))
+                    })
+                    .map(|s| {
+                        let repl = if s.ends_with('=') { s.to_string() } else { format!("{} ", s) };
+                        Pair { display: s.to_string(), replacement: repl }
+                    })
                     .collect();
                 if !candidates.is_empty() {
-                    candidates.sort_by(|a, b| a.display.cmp(&b.display));
+                    candidates.sort_by(|a, b| {
+                        let a_starts = a.display.to_lowercase().starts_with(&wl);
+                        let b_starts = b.display.to_lowercase().starts_with(&wl);
+                        if a_starts != b_starts {
+                            return b_starts.cmp(&a_starts);
+                        }
+                        a.display.cmp(&b.display)
+                    });
                     return Ok((word_start, candidates));
                 }
             }
@@ -249,19 +289,27 @@ impl JshHelper {
         let mut candidates = Vec::new();
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.to_lowercase().starts_with(&fl) {
+            let nl = name.to_lowercase();
+            if !nl.starts_with(&fl) && (fl.is_empty() || !nl.contains(&fl)) {
                 continue;
             }
             let is_dir = entry.path().is_dir();
             if dirs_only && !is_dir {
                 continue;
             }
-            // Append '/' to directories so the next tab descends into them.
-            let suffix = if is_dir { "/" } else { "" };
-            let replacement = format!("{}{}{}", visible_dir, name, suffix);
+            // Append '/' to directories so the next tab descends into them, or ' ' to files.
+            let (suffix, replacement_suffix) = if is_dir { ("/", "/") } else { ("", " ") };
+            let replacement = format!("{}{}{}", visible_dir, name, replacement_suffix);
             candidates.push(Pair { display: format!("{}{}", name, suffix), replacement });
         }
-        candidates.sort_by(|a, b| a.display.cmp(&b.display));
+        candidates.sort_by(|a, b| {
+            let a_starts = a.display.to_lowercase().starts_with(&fl);
+            let b_starts = b.display.to_lowercase().starts_with(&fl);
+            if a_starts != b_starts {
+                return b_starts.cmp(&a_starts);
+            }
+            a.display.cmp(&b.display)
+        });
         Some((word_start, candidates))
     }
 }
@@ -443,6 +491,9 @@ mod tests {
     fn subcommands_known() {
         assert!(known_subcommands("git").unwrap().contains(&"commit"));
         assert!(known_subcommands("cargo").unwrap().contains(&"build"));
+        assert!(known_subcommands("aly").unwrap().contains(&"run"));
+        assert!(known_subcommands("apg").unwrap().contains(&"install"));
+        assert!(known_subcommands("cutils").unwrap().contains(&"list"));
         assert!(known_subcommands("nonesuch").is_none());
     }
 
