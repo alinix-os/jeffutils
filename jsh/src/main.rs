@@ -210,12 +210,9 @@ fn run_interactive(mut state: ShellState) {
     let mut rl = Editor::<JshHelper, DefaultHistory>::with_config(config)
         .expect("Erro ao inicializar editor de linha");
 
-    // Implement a smart Up/Down history search:
-    // If line is empty, it uses PreviousHistory/NextHistory (linear traversal).
-    // If line has text, it uses HistorySearchBackward/Forward (prefix search).
     struct UpArrowHandler;
     impl rustyline::ConditionalEventHandler for UpArrowHandler {
-        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _pos: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
             if ctx.line().is_empty() {
                 Some(rustyline::Cmd::PreviousHistory)
             } else {
@@ -225,7 +222,7 @@ fn run_interactive(mut state: ShellState) {
     }
     struct DownArrowHandler;
     impl rustyline::ConditionalEventHandler for DownArrowHandler {
-        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _pos: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
             if ctx.line().is_empty() {
                 Some(rustyline::Cmd::NextHistory)
             } else {
@@ -257,15 +254,34 @@ fn run_interactive(mut state: ShellState) {
         let _ = rl.load_history(&history_path);
     }
 
+    // Helper: minimal percent-encoding suitable for the path component of OSC 7.
+    fn encode_osc7_path(p: &std::path::Path) -> String {
+        let mut out = String::new();
+        for b in p.display().to_string().bytes() {
+            match b {
+                b'%' => out.push_str("%25"),
+                b' ' => out.push_str("%20"),
+                b'#' => out.push_str("%23"),
+                b'?' => out.push_str("%3F"),
+                _ if b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'/' => {
+                    out.push(b as char);
+                }
+                _ => out.push_str(&format!("%{:02X}", b)),
+            }
+        }
+        out
+    }
+
     loop {
-        // Emit OSC 7 to inform terminal emulator of the current working directory
-        // This allows Ctrl+Shift+T or Ctrl+Alt+N to open in the same directory.
+        // Emit OSC 7 to inform terminal emulator of the current working directory.
+        // Written to stderr so it bypasses rustyline's alternate-screen buffer
+        // and is reliably picked up by GNOME Terminal / VTE for Ctrl+Shift+T.
         if let Ok(pwd) = std::env::current_dir() {
             let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
             use std::io::Write;
-            let encoded_pwd = pwd.display().to_string().replace(" ", "%20");
-            print!("\x1b]7;file://{}{}\x1b\\", hostname, encoded_pwd);
-            let _ = std::io::stdout().flush();
+            let encoded_pwd = encode_osc7_path(&pwd);
+            eprint!("\x1b]7;file://{}{}\x1b\\", hostname, encoded_pwd);
+            let _ = std::io::stderr().flush();
         }
 
         let prompt = state.render_prompt();

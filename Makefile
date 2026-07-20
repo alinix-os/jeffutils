@@ -84,7 +84,7 @@ REL_DIR := target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)release
 
 
 
-.PHONY: all build build-all install install-all clean info package-deb package-rpm package $(PROJECTS)
+.PHONY: all build build-all install install-all clean info package-deb package-rpm package-aur package $(PROJECTS)
 
 
 
@@ -221,3 +221,6 @@ info:
 	@for p in $(PROJECTS); do \
 		echo " - $$p"; \
 	done
+package-aur: build-all
+	@mkdir -p $(ROOT_DIR)/dist
+	@REL_DIR=$(REL_DIR) $(ROOT_DIR)/packaging/build-pkg-aur.sh

@@ -6,3 +6,15 @@ Cargo.lock
 .DS_Store
 *.tmp
 /dist
+*.log
+*.log.*
+*.swp
+*~
+*.bak
+env/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+.idea/
+.vscode/

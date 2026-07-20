@@ -132,7 +132,7 @@ impl<'a> Lexer<'a> {
                         }
                     } else {
                         self.skip_spaces();
-                        let target = self.read_word();
+                        let target = self.read_redirect_word();
                         self.tokens.push(Token::Redirect(Redirect {
                             fd: 0,
                             append: false,
@@ -147,7 +147,7 @@ impl<'a> Lexer<'a> {
                         self.chars.next();
                     }
                     self.skip_spaces();
-                    let target = self.read_word();
+                    let target = self.read_redirect_word();
                     self.tokens.push(Token::Redirect(Redirect {
                         fd: 1,
                         append,
@@ -158,7 +158,7 @@ impl<'a> Lexer<'a> {
                     // Might be `N>` / `N>>` / `N<`; otherwise it's a normal word.
                     if let Some((fd, append, is_input)) = self.peek_numeric_redirect() {
                         self.skip_spaces();
-                        let target = self.read_word();
+                        let target = self.read_redirect_word();
                         self.tokens.push(Token::Redirect(Redirect {
                             fd,
                             append,
@@ -232,9 +232,19 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Like `read_word`, but also allows `&` in the word (used for redirect
+    /// targets so `>&1`, `N>&1`, etc. are parsed correctly).
+    fn read_redirect_word(&mut self) -> Word {
+        self.read_word_inner(false)
+    }
+
     /// Reads one whitespace-delimited word, honoring quotes, backslash
     /// escapes, and `$VAR` / `${VAR}` / `$(...)` / backtick expansions.
     fn read_word(&mut self) -> Word {
+        self.read_word_inner(true)
+    }
+
+    fn read_word_inner(&mut self, break_on_ampersand: bool) -> Word {
         let mut segments: Vec<WordSegment> = Vec::new();
         let mut current = String::new();
         let mut any_quotes = false;
@@ -255,7 +265,8 @@ impl<'a> Lexer<'a> {
                 break;
             }
             match c {
-                '|' | '&' | ';' | '<' | '>' => break,
+                '|' | ';' | '<' | '>' => break,
+                '&' if break_on_ampersand => break,
                 '\'' => {
                     any_quotes = true;
                     self.chars.next();
