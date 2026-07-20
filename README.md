@@ -1,12 +1,13 @@
 # JeffUtils
 
-Conjunto oficial de utilitários de linha de comando do **Alinix OS**, escrito em Rust. Inclui o shell **JSH**, o editor **texit**, o monitor **jtop**, além de reimplementações completas dos comandos essenciais do sistema — coreutils, rede, processos, disco, texto e mais.
+Conjunto oficial de utilitários de linha de comando do **Alinix OS**, escrito em Rust. Inclui o shell **JSH**, o editor **texit**, o monitor **jtop**, a linguagem **aly**, além de reimplementações completas dos comandos essenciais do sistema — coreutils, rede, processos, disco, texto e mais.
 
 Todos os utilitários compartilham um único workspace Cargo, otimizado para binários pequenos e rápidos (`lto`, `strip`, `panic = "abort"`).
 
 ## Destaques
 
 - **jsh** — shell interativo com parser próprio, pipelines, background jobs, completions e builtins completos.
+- **aly** — linguagem de programação expressiva e tipada dinamicamente, com gerenciador de pacotes (`apg`), REPL interativo e suporte a GUI.
 - **sh** — shell POSIX minimalista com builtins, pipes e expansão de glob.
 - **texit** — editor de texto terminal com syntax highlighting, busca, undo/redo e suporte a UTF-8.
 - **jeofetch** — informações do sistema com logo ASCII do Alinix OS.
@@ -15,11 +16,12 @@ Todos os utilitários compartilham um único workspace Cargo, otimizado para bin
 
 ## Utilitários
 
-### Shell & Terminal
+### Shell, Linguagem & Terminal
 
 | Comando | Descrição |
 |---------|-----------|
 | `jsh` | Shell interativo do Alinix |
+| `aly` | Linguagem de programação Aly-lang e interpretador |
 | `sh` | Shell POSIX minimalista |
 | `clear` | Limpa o terminal |
 | `clock` | Exibe data/hora com formatação |
