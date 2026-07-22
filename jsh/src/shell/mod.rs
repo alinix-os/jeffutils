@@ -10,6 +10,8 @@ use crossterm::style::Stylize;
 
 use crate::parser::{Word, WordSegment};
 
+pub mod history;
+
 pub struct ShellState {
     pub last_exit_status: i32,
     pub home_dir: PathBuf,
@@ -54,6 +56,7 @@ pub struct ShellState {
     bash_cmd_neg_cache: HashSet<String>,
     /// Whether the shell is currently running in an interactive session.
     pub is_interactive: bool,
+    pub history_mgr: Arc<history::HistoryManager>,
 }
 
 impl ShellState {
@@ -90,6 +93,9 @@ impl ShellState {
             map.insert("c".to_string(), "clear".to_string());
         }
 
+        let history_mgr = Arc::new(history::HistoryManager::new());
+        history_mgr.load_history();
+
         Self {
             last_exit_status: 0,
             home_dir: home,
@@ -107,6 +113,7 @@ impl ShellState {
             cached_os_logo: None,
             bash_cmd_neg_cache: HashSet::new(),
             is_interactive: false,
+            history_mgr,
         }
     }
 
@@ -844,6 +851,36 @@ export PATH=$PATH:/usr/local/bin
             self.get_current_dir_short().bold().magenta(),
             git_part,
             ">".magenta()
+        )
+    }
+
+    pub fn render_prompt_clean(&mut self) -> String {
+        let status_part = if self.last_exit_status == 0 {
+            "".to_string()
+        } else {
+            format!("✘ {} ", self.last_exit_status)
+        };
+
+        let ssh_part = if self.is_ssh() {
+            let user = env::var("USER").unwrap_or_else(|_| "user".to_string());
+            let host = env::var("HOSTNAME").unwrap_or_else(|_| "host".to_string());
+            format!("{}@{} 🔐 ", user, host)
+        } else {
+            "".to_string()
+        };
+
+        let git_part = match self.get_git_branch() {
+            Some(branch) => format!(" {}", branch),
+            None => "".to_string(),
+        };
+
+        format!(
+            "{}{}{} {} {} > ",
+            status_part,
+            ssh_part,
+            self.os_logo(),
+            self.get_current_dir_short(),
+            git_part
         )
     }
 }

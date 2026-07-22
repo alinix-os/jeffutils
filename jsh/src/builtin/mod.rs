@@ -38,6 +38,7 @@ pub fn is_builtin(cmd: &str) -> bool {
             | "true"
             | "false"
             | ":"
+            | "history"
     )
 }
 
@@ -287,6 +288,58 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
                     }
                     Some(1)
                 }
+            }
+        }
+        "history" => {
+            if args.len() > 1 {
+                match args[1].as_str() {
+                    "pin" => {
+                        if args.len() > 2 {
+                            let cmd_to_pin = args[2..].join(" ");
+                            if let Err(e) = state.history_mgr.pin_command(&cmd_to_pin) {
+                                eprintln!("history pin: erro ao fixar comando: {}", e);
+                                Some(1)
+                            } else {
+                                println!("Comando fixado com sucesso: {}", cmd_to_pin);
+                                Some(0)
+                            }
+                        } else {
+                            eprintln!("Uso: history pin <comando>");
+                            Some(1)
+                        }
+                    }
+                    "unpin" => {
+                        if args.len() > 2 {
+                            let cmd_to_unpin = args[2..].join(" ");
+                            if let Err(e) = state.history_mgr.unpin_command(&cmd_to_unpin) {
+                                eprintln!("history unpin: erro ao desafixar comando: {}", e);
+                                Some(1)
+                            } else {
+                                println!("Comando desafixado com sucesso: {}", cmd_to_unpin);
+                                Some(0)
+                            }
+                        } else {
+                            eprintln!("Uso: history unpin <comando>");
+                            Some(1)
+                        }
+                    }
+                    "clear" => {
+                        if let Err(e) = state.history_mgr.clear_history() {
+                            eprintln!("history clear: erro ao limpar histórico: {}", e);
+                            Some(1)
+                        } else {
+                            println!("Histórico limpo com sucesso.");
+                            Some(0)
+                        }
+                    }
+                    _ => {
+                        eprintln!("Subcomando desconhecido. Subcomandos válidos: pin, unpin, clear");
+                        Some(1)
+                    }
+                }
+            } else {
+                state.history_mgr.print_history();
+                Some(0)
             }
         }
         "exit" => {

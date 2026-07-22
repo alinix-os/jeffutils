@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
-use rustyline::hint::{Hinter, HistoryHinter, Hint};
+use rustyline::hint::{Hinter, Hint};
 use rustyline::highlight::Highlighter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
@@ -79,8 +79,14 @@ impl Hint for JshHint {
     }
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    pub static CURRENT_COLORED_PROMPT: RefCell<String> = RefCell::new(String::new());
+}
+
 pub struct JshHelper {
-    pub hinter: HistoryHinter,
+    pub history_mgr: Arc<crate::shell::history::HistoryManager>,
     pub completer: FilenameCompleter,
     pub aliases: Arc<Mutex<HashMap<String, String>>>,
     pub shell_vars: Arc<Mutex<HashMap<String, String>>>,
@@ -316,16 +322,21 @@ impl JshHelper {
 
 impl Hinter for JshHelper {
     type Hint = JshHint;
-    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
-        if let Some(h) = self.hinter.hint(line, pos, ctx) {
-            let raw_text = h.completion()?.to_string();
-            Some(JshHint {
-                display: raw_text.clone(),
-                complete: raw_text,
-            })
-        } else {
-            None
+    fn hint(&self, line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
+        let cwd = {
+            let vars = self.shell_vars.lock().unwrap();
+            vars.get("PWD").cloned().unwrap_or_else(|| ".".to_string())
+        };
+        if let Some(suggestion) = self.history_mgr.get_suggestion(line, &cwd) {
+            if suggestion.starts_with(line) && suggestion != line {
+                let remainder = suggestion[line.len()..].to_string();
+                return Some(JshHint {
+                    display: remainder.clone(),
+                    complete: remainder,
+                });
+            }
         }
+        None
     }
 }
 
@@ -336,6 +347,19 @@ impl Validator for JshHelper {
 }
 
 impl Highlighter for JshHelper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, default: bool) -> Cow<'b, str> {
+        if default {
+            let colored = CURRENT_COLORED_PROMPT.with(|cell| cell.borrow().clone());
+            if !colored.is_empty() {
+                Cow::Owned(colored)
+            } else {
+                Cow::Borrowed(prompt)
+            }
+        } else {
+            Cow::Borrowed(prompt)
+        }
+    }
+
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
         if line.is_empty() {
             return Cow::Borrowed(line);
@@ -514,8 +538,9 @@ mod tests {
     use super::*;
 
     fn helper() -> JshHelper {
+        let history_mgr = Arc::new(crate::shell::history::HistoryManager::new());
         JshHelper {
-            hinter: HistoryHinter::new(),
+            history_mgr,
             completer: FilenameCompleter::new(),
             aliases: Arc::new(Mutex::new(HashMap::new())),
             shell_vars: Arc::new(Mutex::new(HashMap::new())),
