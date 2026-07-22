@@ -47,6 +47,13 @@ pub struct ShellState {
     /// Last-seen modification time of `.jshrc`, used to detect edits for
     /// hot-reloading. `None` until the file is first loaded.
     jshrc_mtime: Option<SystemTime>,
+    /// Cached OS logo (emoji) for the prompt, populated on first access.
+    cached_os_logo: Option<String>,
+    /// Cached commands known to NOT exist in bash (neg cache for try_bash_fallback).
+    /// This avoids spawning bash for every unknown command.
+    bash_cmd_neg_cache: HashSet<String>,
+    /// Whether the shell is currently running in an interactive session.
+    pub is_interactive: bool,
 }
 
 impl ShellState {
@@ -55,6 +62,16 @@ impl ShellState {
             .or_else(|| env::var_os("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/"));
+
+        // Ensure PATH is set to a reasonable default if not present
+        // This handles cases where PATH is empty or missing (e.g. when invoked via `sh -c`)
+        let default_path = "/usr/local/bin:/usr/bin:/bin";
+        let path = env::var_os("PATH");
+        if path.as_ref().map(|p| p.is_empty()).unwrap_or(true) {
+            unsafe {
+                env::set_var("PATH", default_path);
+            }
+        }
 
         // Override SHELL env var to point to our jsh
         if let Ok(exe) = env::current_exe() {
@@ -87,6 +104,9 @@ impl ShellState {
             functions: Arc::new(Mutex::new(HashMap::new())),
             positional_stack: Vec::new(),
             jshrc_mtime: None,
+            cached_os_logo: None,
+            bash_cmd_neg_cache: HashSet::new(),
+            is_interactive: false,
         }
     }
 
@@ -163,10 +183,17 @@ export PATH=$PATH:/usr/local/bin
     /// script previously loaded via `source`/`.`, so functions defined
     /// there (e.g. `nvm`) remain callable from jsh. Returns `None` if there
     /// are no bash-sourced files or bash isn't available.
-    pub fn try_bash_fallback(&self, program: &str, args: &[String]) -> Option<i32> {
+    /// Uses a negative cache to avoid repeated spawns for commands known to not exist.
+    pub fn try_bash_fallback(&mut self, program: &str, args: &[String]) -> Option<i32> {
         if self.bash_sourced_files.is_empty() {
             return None;
         }
+
+        // Check negative cache first - skip bash spawn if we already know this command doesn't exist
+        if self.bash_cmd_neg_cache.contains(program) {
+            return None;
+        }
+
         let mut script = String::new();
         for f in &self.bash_sourced_files {
             script.push_str("source ");
@@ -187,6 +214,8 @@ export PATH=$PATH:/usr/local/bin
             .ok()?;
 
         if !check_status.success() {
+            // Cache failure to avoid repeated spawns for the same missing command
+            self.bash_cmd_neg_cache.insert(program.to_string());
             return None;
         }
 
@@ -306,7 +335,7 @@ export PATH=$PATH:/usr/local/bin
         if !after.contains('{') {
             return None;
         }
-        Some((name.to_string(), line))
+        Some((name.to_string(), after))
     }
 
     pub fn set_positional_args(&mut self, args: Vec<String>) {
@@ -498,12 +527,18 @@ export PATH=$PATH:/usr/local/bin
             return vec![out];
         }
 
-        if let Some(matches) = self.try_glob(&out) {
-            if !matches.is_empty() {
-                return matches;
+        let braced = crate::utils::expand_braces(&out);
+        let mut final_out = Vec::new();
+        for item in braced {
+            if let Some(matches) = self.try_glob(&item) {
+                if !matches.is_empty() {
+                    final_out.extend(matches);
+                    continue;
+                }
             }
+            final_out.push(item);
         }
-        vec![out]
+        final_out
     }
 
     /// Expands a `Word` into a single joined string (used where multiple
@@ -535,12 +570,13 @@ export PATH=$PATH:/usr/local/bin
         let list = crate::parser::parser::parse(tokens);
         // Reuse the current process env/shell vars by spawning through the
         // same expansion path, but capture stdout instead of inheriting it.
-        let mut last_output = Vec::new();
+        let mut all_output = Vec::new();
         for (andor, _op) in &list.items {
             let expanded = self.expand_pipeline(&andor.pipeline, None);
-            last_output = crate::executor::pipeline::execute_capture(expanded);
+            let output = crate::executor::pipeline::execute_capture(expanded);
+            all_output.extend(output);
         }
-        let mut s = String::from_utf8_lossy(&last_output).into_owned();
+        let mut s = String::from_utf8_lossy(&all_output).into_owned();
         while s.ends_with('\n') {
             s.pop();
         }
@@ -612,7 +648,7 @@ export PATH=$PATH:/usr/local/bin
                 env_vars: expanded_env_vars,
                 redirects,
                 heredoc: if is_heredoc {
-                    heredoc_body.map(|s| s.to_string())
+                    heredoc_body.map(|s| self.expand_str(s))
                 } else {
                     None
                 },
@@ -752,24 +788,35 @@ export PATH=$PATH:/usr/local/bin
 
     /// Returns the OS logo (emoji) for the running system, or the value of
     /// `PROMPT_ICON` if the user has set that override.
-    fn os_logo(&self) -> String {
+    fn os_logo(&mut self) -> String {
+        // Check for user override
         let override_icon = self.get_var("PROMPT_ICON");
         if !override_icon.is_empty() {
             return override_icon;
         }
 
+        // Return cached logo if available (avoid repeated /etc/os-release reads)
+        if let Some(ref logo) = self.cached_os_logo {
+            return logo.clone();
+        }
+
+        // Detect and cache the logo
         let (id, id_like, _name) = self.detect_distro();
         let mut candidates: Vec<String> = vec![id];
         candidates.extend(id_like.split_whitespace().map(|s| s.to_string()));
 
-        candidates
+        let logo = candidates
             .iter()
             .find_map(|c| Self::logo_for(c))
             .unwrap_or("🐧")
-            .to_string()
+            .to_string();
+
+        self.cached_os_logo = Some(logo.clone());
+        logo
     }
 
-    pub fn render_prompt(&self) -> String {
+    pub fn render_prompt(&mut self) -> String {
+        crate::utils::emit_osc7();
         let status_part = if self.last_exit_status == 0 {
             "".to_string()
         } else {

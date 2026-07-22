@@ -19,9 +19,15 @@ pub fn is_builtin(cmd: &str) -> bool {
         cmd,
         "cd" | "exit"
             | "exec"
+            | "time"
             | "jeofetch"
             | "help"
             | "version"
+            | "jsh-version"
+            | "jsh-path"
+            | "jsh-info"
+            | "which-jsh"
+            | "jsh-which"
             | "export"
             | "unset"
             | "set"
@@ -42,20 +48,14 @@ pub fn is_executable(cmd: &str) -> bool {
     if cmd.contains('/') || cmd.contains(std::path::MAIN_SEPARATOR) {
         return false;
     }
-    let path_var = env::var_os("PATH").unwrap_or_default();
-    for path in env::split_paths(&path_var) {
-        let exe_path = path.join(cmd);
-        if exe_path.is_file() {
-            return true;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if path.join(format!("{}.exe", cmd)).is_file() {
-                return true;
-            }
-        }
-    }
-    false
+    let path_var = match env::var_os("PATH") {
+        Some(p) => p,
+        None => return false,
+    };
+    env::split_paths(&path_var).any(|dir| {
+        let full = dir.join(cmd);
+        full.is_file()
+    })
 }
 
 fn print_help() {
@@ -74,6 +74,7 @@ Builtins:
   source arquivo | .  Executa um script no shell atual
   true / false / :    Comandos no-op de status 0/1
   exec [cmd] [args]   Substitui o processo do shell pelo comando especificado
+  jsh-path / jsh-info Mostra o caminho exato do binário jsh em execução
   exit                Sai do jsh
 
 Sintaxe suportada: pipes (|), redirecionamentos (>, >>, <, <<, <<<, 2>, &>),
@@ -97,12 +98,20 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
         if let Some(ref prev) = state.old_pwd {
             let prev_clone = prev.clone();
             let current = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let old_pwd = env::var("PWD").unwrap_or_else(|_| current.to_string_lossy().into_owned());
             if let Err(e) = env::set_current_dir(&prev_clone) {
                 eprintln!("cd: {}", e);
                 return Some(1);
             }
             println!("{}", prev_clone.display());
             state.old_pwd = Some(current);
+            unsafe {
+                env::set_var("OLDPWD", &old_pwd);
+                if let Ok(new_pwd) = env::current_dir() {
+                    env::set_var("PWD", &new_pwd);
+                }
+            }
+            crate::utils::emit_osc7();
             return Some(0);
         } else {
             eprintln!("cd: nenhuma pasta anterior gravada.");
@@ -120,11 +129,19 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
         && !state.functions.lock().unwrap().contains_key(cmd)
     {
         let current = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let old_pwd = env::var("PWD").unwrap_or_else(|_| current.to_string_lossy().into_owned());
         if let Err(e) = env::set_current_dir(cmd) {
             eprintln!("cd: {}", e);
             return Some(1);
         }
         state.old_pwd = Some(current);
+        unsafe {
+            env::set_var("OLDPWD", &old_pwd);
+            if let Ok(new_pwd) = env::current_dir() {
+                env::set_var("PWD", &new_pwd);
+            }
+        }
+        crate::utils::emit_osc7();
         return Some(0);
     }
 
@@ -136,6 +153,7 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
                 state.home_dir.clone()
             };
             let current = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let old_pwd = env::var("PWD").unwrap_or_else(|_| current.to_string_lossy().into_owned());
             if let Err(e) = env::set_current_dir(&target) {
                 if !state.quiet_errors {
                     eprintln!("cd: {}", e);
@@ -143,6 +161,13 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
                 Some(1)
             } else {
                 state.old_pwd = Some(current);
+                unsafe {
+                    env::set_var("OLDPWD", &old_pwd);
+                    if let Ok(new_pwd) = env::current_dir() {
+                        env::set_var("PWD", &new_pwd);
+                    }
+                }
+                crate::utils::emit_osc7();
                 Some(0)
             }
         }
@@ -154,8 +179,33 @@ pub fn handle_builtin(args: &[String], state: &mut ShellState) -> Option<i32> {
             print_help();
             Some(0)
         }
+        "jsh-path" | "which-jsh" | "jsh-which" => {
+            if let Ok(exe) = env::current_exe() {
+                println!("{}", exe.display());
+            } else {
+                println!("jsh");
+            }
+            Some(0)
+        }
+        "jsh-info" => {
+            let exe_str = env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "jsh".to_string());
+            println!("jsh v{} ({})", env!("CARGO_PKG_VERSION"), exe_str);
+            Some(0)
+        }
+        "jsh-version" => {
+            let exe_str = env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "jsh".to_string());
+            println!("jsh v{} ({})", env!("CARGO_PKG_VERSION"), exe_str);
+            Some(0)
+        }
         "version" => {
-            println!("jsh {}", env!("CARGO_PKG_VERSION"));
+            let exe_str = env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "jsh".to_string());
+            println!("jsh {} ({})", env!("CARGO_PKG_VERSION"), exe_str);
             Some(0)
         }
         "true" | ":" => Some(0),

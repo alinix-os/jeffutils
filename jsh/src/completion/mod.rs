@@ -319,9 +319,8 @@ impl Hinter for JshHelper {
     fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
         if let Some(h) = self.hinter.hint(line, pos, ctx) {
             let raw_text = h.completion()?.to_string();
-            let display_text = format!("\x1B[90m{}\x1B[0m", raw_text);
             Some(JshHint {
-                display: display_text,
+                display: raw_text.clone(),
                 complete: raw_text,
             })
         } else {
@@ -467,9 +466,46 @@ impl Highlighter for JshHelper {
         true
     }
 
-    // Highlight the selected candidate in white background and black text (reverse video)
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        Cow::Owned(format!("\x1B[90m{}\x1B[0m", hint))
+    }
+
     fn highlight_candidate<'c>(&self, candidate: &'c str, _completion: CompletionType) -> Cow<'c, str> {
-        Cow::Owned(format!("\x1B[7m{}\x1B[0m", candidate))
+        let trimmed = candidate.trim_end();
+
+        // Directory: bold blue (like ls --color)
+        if trimmed.ends_with('/') {
+            return Cow::Owned(format!("\x1B[1;34m{}\x1B[0m", candidate));
+        }
+
+        // Detect file extension for ls-like coloring
+        if let Some(dot_pos) = trimmed.rfind('.') {
+            let ext = &trimmed[dot_pos..].to_lowercase();
+            let color = match ext.as_str() {
+                // Archives: bold red
+                ".tar" | ".gz" | ".bz2" | ".xz" | ".zip" | ".7z" | ".rar"
+                | ".deb" | ".rpm" | ".tgz" | ".zst" | ".lz4" | ".iso" => Some("1;31"),
+                // Images/media: bold magenta
+                ".jpg" | ".jpeg" | ".png" | ".gif" | ".bmp" | ".svg" | ".webp"
+                | ".ico" | ".tiff" | ".mp4" | ".mkv" | ".avi" | ".mov" | ".webm"
+                | ".mp3" | ".flac" | ".ogg" | ".wav" | ".aac" => Some("1;35"),
+                // Scripts/source: bold green
+                ".sh" | ".bash" | ".zsh" | ".fish" | ".py" | ".rb" | ".pl"
+                | ".rs" | ".go" | ".js" | ".ts" | ".c" | ".cpp" | ".h"
+                | ".java" | ".aly" => Some("1;32"),
+                // Config/data: cyan
+                ".toml" | ".yaml" | ".yml" | ".json" | ".xml" | ".ini"
+                | ".cfg" | ".conf" => Some("0;36"),
+                // Markdown/docs: yellow
+                ".md" | ".txt" | ".rst" | ".org" => Some("0;33"),
+                _ => None,
+            };
+            if let Some(c) = color {
+                return Cow::Owned(format!("\x1B[{}m{}\x1B[0m", c, candidate));
+            }
+        }
+
+        Cow::Borrowed(candidate)
     }
 }
 

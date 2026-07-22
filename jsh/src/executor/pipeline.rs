@@ -25,10 +25,10 @@ fn open_output_file(path: &str, append: bool) -> File {
         Ok(f) => f,
         Err(e) => {
             eprintln!("jsh: {}: {}", path, e);
-            OpenOptions::new()
-                .write(true)
-                .open("/dev/null")
-                .unwrap_or_else(|_| panic!("jsh: falha ao abrir /dev/null"))
+            File::open("/dev/null").unwrap_or_else(|_| {
+                eprintln!("jsh: erro crítico: não foi possível abrir /dev/null");
+                std::process::exit(1);
+            })
         }
     }
 }
@@ -40,10 +40,10 @@ fn open_input_file(path: &str) -> File {
         Ok(f) => f,
         Err(e) => {
             eprintln!("jsh: {}: {}", path, e);
-            OpenOptions::new()
-                .read(true)
-                .open("/dev/null")
-                .unwrap_or_else(|_| panic!("jsh: falha ao abrir /dev/null"))
+            File::open("/dev/null").unwrap_or_else(|_| {
+                eprintln!("jsh: erro crítico: não foi possível abrir /dev/null");
+                std::process::exit(1);
+            })
         }
     }
 }
@@ -66,11 +66,11 @@ fn dup_fd(fd: i32, writable: bool) -> Stdio {
 }
 
 /// Builds a `Stdio` that feeds `content` to a child's stdin via a pipe.
-fn string_to_stdio(content: &str) -> Stdio {
-    let (read, mut write) = UnixStream::pair().unwrap();
+fn string_to_stdio(content: &str) -> Option<Stdio> {
+    let (read, mut write) = UnixStream::pair().ok()?;
     let _ = write.write_all(content.as_bytes());
     drop(write);
-    Stdio::from(OwnedFd::from(read))
+    Some(Stdio::from(OwnedFd::from(read)))
 }
 
 /// Builds the stdin/stdout/stderr `Stdio` for one command in a pipeline.
@@ -106,9 +106,9 @@ fn spawn_one(
         match &r.target {
             RedirectTarget::File(p) => Stdio::from(open_input_file(p)),
             RedirectTarget::Fd(fd) => dup_fd(*fd, false),
-            RedirectTarget::HereString(s) => string_to_stdio(&format!("{}\n", s)),
+            RedirectTarget::HereString(s) => string_to_stdio(&format!("{}\n", s)).unwrap_or_else(Stdio::inherit),
             RedirectTarget::Heredoc(_) => match &cmd.heredoc {
-                Some(body) => string_to_stdio(body),
+                Some(body) => string_to_stdio(body).unwrap_or_else(Stdio::inherit),
                 None => Stdio::inherit(),
             },
         }
@@ -128,12 +128,19 @@ fn spawn_one(
         }
     } else if piped {
         // Build a manual pipe so stderr can be merged into it (e.g. `2>&1`).
-        let (read_end, write_end) = UnixStream::pair().unwrap();
-        *next_stdin = Some(Stdio::from(OwnedFd::from(read_end)));
-        (
-            Stdio::from(OwnedFd::from(write_end.try_clone().unwrap())),
-            Some(write_end),
-        )
+        if let Ok((read_end, write_end)) = UnixStream::pair() {
+            if let Ok(write_clone) = write_end.try_clone() {
+                *next_stdin = Some(Stdio::from(OwnedFd::from(read_end)));
+                (
+                    Stdio::from(OwnedFd::from(write_clone)),
+                    Some(write_end),
+                )
+            } else {
+                (Stdio::inherit(), None)
+            }
+        } else {
+            (Stdio::inherit(), None)
+        }
     } else if capture_stdout {
         (Stdio::piped(), None)
     } else {
@@ -148,7 +155,10 @@ fn spawn_one(
             RedirectTarget::Fd(target_fd) => {
                 if *target_fd == 1 && pipe_write.is_some() {
                     // `2>&1` inside a pipeline: join the stdout pipe.
-                    Stdio::from(OwnedFd::from(pipe_write.as_ref().unwrap().try_clone().unwrap()))
+                    pipe_write.as_ref()
+                        .and_then(|pw| pw.try_clone().ok())
+                        .map(|cloned| Stdio::from(OwnedFd::from(cloned)))
+                        .unwrap_or_else(|| dup_fd(*target_fd, true))
                 } else {
                     dup_fd(*target_fd, true)
                 }
@@ -170,14 +180,15 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
         return 0;
     }
 
-    // Block SIGINT in the shell while children run so Ctrl+C kills only
-    // the foreground process group, not the shell itself.
-    let is_tty = unsafe { libc::isatty(libc::STDIN_FILENO) != 0 };
+    let is_tty = state.is_interactive && unsafe { libc::isatty(libc::STDIN_FILENO) != 0 };
     let mut old_sigint: usize = 0;
     if is_tty {
         unsafe {
             old_sigint = libc::signal(libc::SIGINT, libc::SIG_IGN);
+            libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            libc::signal(libc::SIGTTIN, libc::SIG_IGN);
         }
+        crate::utils::save_shell_termios();
     }
 
     let mut children = Vec::new();
@@ -190,26 +201,22 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
         let mut process = spawn_one(cmd, piped, &mut next_stdin, false);
 
         unsafe {
-            if i == 0 {
-                process.pre_exec(|| {
-                    let _ = libc::setpgid(0, 0);
-                    libc::signal(libc::SIGTTOU, libc::SIG_DFL);
-                    libc::signal(libc::SIGTTIN, libc::SIG_DFL);
-                    libc::signal(libc::SIGTSTP, libc::SIG_DFL);
-                    libc::signal(libc::SIGQUIT, libc::SIG_DFL);
-                    Ok(())
-                });
-            } else {
-                let first_pgid = pgid;
-                process.pre_exec(move || {
-                    let _ = libc::setpgid(0, first_pgid);
-                    libc::signal(libc::SIGTTOU, libc::SIG_DFL);
-                    libc::signal(libc::SIGTTIN, libc::SIG_DFL);
-                    libc::signal(libc::SIGTSTP, libc::SIG_DFL);
-                    libc::signal(libc::SIGQUIT, libc::SIG_DFL);
-                    Ok(())
-                });
-            }
+            let is_first = i == 0;
+            let first_pgid = pgid;
+            process.pre_exec(move || {
+                let pid = libc::getpid();
+                let pgrp = if is_first { pid } else { first_pgid };
+                let _ = libc::setpgid(0, pgrp);
+                if is_tty {
+                    let _ = libc::tcsetpgrp(libc::STDIN_FILENO, pgrp);
+                }
+                libc::signal(libc::SIGTTOU, libc::SIG_DFL);
+                libc::signal(libc::SIGTTIN, libc::SIG_DFL);
+                libc::signal(libc::SIGTSTP, libc::SIG_DFL);
+                libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                Ok(())
+            });
         }
 
         match process.spawn() {
@@ -221,6 +228,9 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
                 unsafe {
                     let target = if i == 0 { child_id } else { pgid };
                     let _ = libc::setpgid(child_id, target);
+                    if is_tty && i == 0 {
+                        let _ = libc::tcsetpgrp(libc::STDIN_FILENO, target);
+                    }
                 }
                 children.push(child);
             }
@@ -235,9 +245,14 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
                 }
                 if is_tty {
                     unsafe {
-                        libc::tcsetpgrp(libc::STDIN_FILENO, libc::getpgrp());
+                        let shell_pgid = libc::getpgrp();
+                        libc::tcsetpgrp(libc::STDIN_FILENO, shell_pgid);
                         libc::signal(libc::SIGINT, old_sigint);
+                        libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                        libc::signal(libc::SIGTTIN, libc::SIG_IGN);
                     }
+                    crate::utils::restore_shell_termios();
+                    crate::utils::reset_terminal_and_flush_stdin();
                 }
                 return 127;
             }
@@ -260,9 +275,14 @@ pub fn execute_with(pipe: ExpandedPipeline, state: &crate::shell::ShellState) ->
 
     if is_tty {
         unsafe {
-            libc::tcsetpgrp(libc::STDIN_FILENO, libc::getpgrp());
+            let shell_pgid = libc::getpgrp();
+            libc::tcsetpgrp(libc::STDIN_FILENO, shell_pgid);
             libc::signal(libc::SIGINT, old_sigint);
+            libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            libc::signal(libc::SIGTTIN, libc::SIG_IGN);
         }
+        crate::utils::restore_shell_termios();
+        crate::utils::reset_terminal_and_flush_stdin();
     }
 
     last_status

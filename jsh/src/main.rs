@@ -5,14 +5,15 @@ mod parser;
 mod shell;
 mod utils;
 
+use std::cell::RefCell;
 use std::io::{BufRead, IsTerminal};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
 use rustyline::hint::HistoryHinter;
-use rustyline::history::DefaultHistory;
-use rustyline::{Config, CompletionType, Editor};
+use rustyline::history::{DefaultHistory, History, SearchDirection};
+use rustyline::{Cmd, ConditionalEventHandler, Config, CompletionType, Editor, Event, EventContext, EventHandler, KeyCode, KeyEvent, Modifiers, Movement, RepeatCount};
 
 use crate::builtin::run_jeofetch;
 use crate::completion::JshHelper;
@@ -21,6 +22,17 @@ use crate::shell::ShellState;
 
 static SIGINT_FLAG: AtomicBool = AtomicBool::new(false);
 
+struct HistorySearchState {
+    prefix: Option<String>,
+    original: Option<String>,
+    index: Option<usize>,
+    last_found: Option<String>,
+}
+
+thread_local! {
+    static HISTORY_SEARCH: RefCell<Option<HistorySearchState>> = RefCell::new(None);
+}
+
 extern "C" fn sigint_handler(_sig: i32) {
     SIGINT_FLAG.store(true, Ordering::SeqCst);
 }
@@ -28,8 +40,7 @@ extern "C" fn sigint_handler(_sig: i32) {
 /// Expands `!!`, `!n`, and `!prefix` history references in a raw input
 /// line, using the rustyline history as the source of past commands.
 /// Runs before tokenizing, exactly like bash's history expansion.
-fn expand_history_refs(line: &str, history: &rustyline::history::DefaultHistory) -> String {
-    use rustyline::history::History;
+fn expand_history_refs(line: &str, history: &DefaultHistory) -> String {
 
     if !line.contains('!') {
         return line.to_string();
@@ -45,28 +56,28 @@ fn expand_history_refs(line: &str, history: &rustyline::history::DefaultHistory)
         match chars.peek() {
             Some('!') => {
                 chars.next();
-                if let Ok(Some(entry)) = history.get(
-                    history.len().wrapping_sub(1),
-                    rustyline::history::SearchDirection::Forward,
-                ) {
-                    out.push_str(&entry.entry);
-                } else {
-                    out.push_str("!!");
+                    if let Ok(Some(entry)) = history.get(
+                        history.len().wrapping_sub(1),
+                        SearchDirection::Forward,
+                    ) {
+                        out.push_str(&entry.entry);
+                    } else {
+                        out.push_str("!!");
+                    }
                 }
-            }
-            Some('$') => {
-                chars.next();
-                if let Ok(Some(entry)) = history.get(
-                    history.len().wrapping_sub(1),
-                    rustyline::history::SearchDirection::Forward,
-                ) {
-                    if let Some(last_arg) = entry.entry.split_whitespace().last() {
-                        out.push_str(last_arg);
+                Some('$') => {
+                    chars.next();
+                    if let Ok(Some(entry)) = history.get(
+                        history.len().wrapping_sub(1),
+                        SearchDirection::Forward,
+                    ) {
+                        if let Some(last_arg) = entry.entry.split_whitespace().last() {
+                            out.push_str(last_arg);
+                        } else {
+                            out.push_str("!$");
+                        }
                     } else {
                         out.push_str("!$");
-                    }
-                } else {
-                    out.push_str("!$");
                 }
             }
             Some(d) if d.is_ascii_digit() => {
@@ -82,7 +93,7 @@ fn expand_history_refs(line: &str, history: &rustyline::history::DefaultHistory)
                 let idx = num.parse::<usize>().unwrap_or(0);
                 if idx >= 1
                     && let Ok(Some(entry)) =
-                        history.get(idx - 1, rustyline::history::SearchDirection::Forward)
+                        history.get(idx - 1, SearchDirection::Forward)
                 {
                     out.push_str(&entry.entry);
                 } else {
@@ -100,12 +111,12 @@ fn expand_history_refs(line: &str, history: &rustyline::history::DefaultHistory)
                         break;
                     }
                 }
-                let found = (0..history.len())
-                    .rev()
-                    .find_map(|i| {
-                        history
-                            .get(i, rustyline::history::SearchDirection::Forward)
-                            .ok()
+                    let found = (0..history.len())
+                        .rev()
+                        .find_map(|i| {
+                            history
+                                .get(i, SearchDirection::Forward)
+                                .ok()
                             .flatten()
                             .filter(|e| e.entry.starts_with(&prefix))
                             .map(|e| e.entry.to_string())
@@ -148,7 +159,7 @@ fn collect_heredocs(
                 match read_more("> ") {
                     Some(l) if l.trim() == delim => break,
                     Some(l) => {
-                        body.push_str(&crate::utils::expand_env_vars(&l));
+                        body.push_str(&l);
                         body.push('\n');
                     }
                     None => break,
@@ -181,7 +192,36 @@ pub fn run_line_with(state: &mut ShellState, line: &str, mut read_more: impl FnM
     crate::executor::run_command_list(state, &list, &heredoc_bodies);
 }
 
+/// Ensures `$PWD` in the environment matches the actual working directory at startup.
+/// Process working directory (`current_dir()`) is authoritative because terminal emulators
+/// and file managers perform `chdir()` before spawning the shell process.
+/// If `$PWD` in the inherited environment is valid and canonicalizes to the same directory
+/// as `current_dir()`, `$PWD` is left unchanged. Otherwise, `$PWD` is updated to match CWD.
+fn sync_pwd() {
+    let cwd = match std::env::current_dir() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    if let Ok(pwd) = std::env::var("PWD") {
+        let pwd_path = std::path::Path::new(&pwd);
+        if pwd_path.is_dir() {
+            if let (Ok(pwd_canon), Ok(cwd_canon)) = (pwd_path.canonicalize(), cwd.canonicalize()) {
+                if pwd_canon == cwd_canon {
+                    return;
+                }
+            }
+        }
+    }
+
+    unsafe {
+        std::env::set_var("PWD", &cwd);
+    }
+}
+
 fn run_interactive(mut state: ShellState) {
+    state.is_interactive = true;
+
     unsafe {
         libc::signal(libc::SIGINT, sigint_handler as *const () as usize);
         
@@ -197,65 +237,244 @@ fn run_interactive(mut state: ShellState) {
         let _ = libc::tcsetpgrp(libc::STDIN_FILENO, pid);
     }
 
+    crate::utils::save_shell_termios();
+
     // Configure history file path ~/.jsh-history
     let history_path = state.home_dir.join(".jsh-history");
 
-    // Use List completion (Bash style) so it doesn't auto-insert choices you have to delete
+    // Use Circular completion so Tab cycles through candidates inline.
+    // First Tab completes the common prefix (or inserts the first match),
+    // subsequent Tabs cycle to the next candidate.
     let config = Config::builder()
-        .completion_type(CompletionType::List)
+        .completion_type(CompletionType::Circular)
         .completion_prompt_limit(100)
+        .max_history_size(50000)
+        .unwrap()
+        .history_ignore_dups(true)
+        .unwrap()
         .bracketed_paste(true)
         .build();
 
     let mut rl = Editor::<JshHelper, DefaultHistory>::with_config(config)
         .expect("Erro ao inicializar editor de linha");
 
-    struct UpArrowHandler;
-    impl rustyline::ConditionalEventHandler for UpArrowHandler {
-        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
-            if ctx.line().is_empty() {
-                Some(rustyline::Cmd::PreviousHistory)
-            } else {
-                Some(rustyline::Cmd::HistorySearchBackward)
+    struct UpArrowHandler {
+        history: *const DefaultHistory,
+    }
+    unsafe impl Send for UpArrowHandler {}
+    unsafe impl Sync for UpArrowHandler {}
+    impl ConditionalEventHandler for UpArrowHandler {
+        fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, ctx: &EventContext) -> Option<Cmd> {
+            let line = ctx.line();
+            let history = unsafe { &*self.history };
+            if history.is_empty() {
+                return None;
             }
+            HISTORY_SEARCH.with(|cell| {
+                let mut state_opt = cell.borrow_mut();
+                let is_continuing = state_opt.as_ref()
+                    .and_then(|s| s.last_found.as_deref())
+                    .is_some_and(|last| last == line);
+                if is_continuing {
+                    let state = state_opt.as_mut().unwrap();
+                    let current_idx = state.index.unwrap();
+                    if current_idx == 0 {
+                        return None;
+                    }
+                    let start = current_idx - 1;
+                    if let Some(prefix) = &state.prefix {
+                        match history.starts_with(prefix, start, SearchDirection::Reverse) {
+                            Ok(Some(sr)) => {
+                                state.index = Some(sr.idx);
+                                state.last_found = Some(sr.entry.to_string());
+                                Some(Cmd::Replace(Movement::WholeBuffer, Some(sr.entry.to_string())))
+                            }
+                            _ => {
+                                let found = (0..=start).rev().find_map(|i| {
+                                    history.get(i, SearchDirection::Forward).ok().flatten().and_then(|e| {
+                                        if e.entry.contains(prefix) {
+                                            Some((i, e.entry.to_string()))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                });
+                                if let Some((idx, entry)) = found {
+                                    state.index = Some(idx);
+                                    state.last_found = Some(entry.clone());
+                                    Some(Cmd::Replace(Movement::WholeBuffer, Some(entry)))
+                                } else {
+                                    None
+                                }
+                            }
+                        }
+                    } else {
+                        if let Ok(Some(entry)) = history.get(start, SearchDirection::Forward) {
+                            state.index = Some(start);
+                            state.last_found = Some(entry.entry.to_string());
+                            Some(Cmd::Replace(Movement::WholeBuffer, Some(entry.entry.to_string())))
+                        } else {
+                            None
+                        }
+                    }
+                } else {
+                    let start = history.len().wrapping_sub(1);
+                    if line.is_empty() {
+                        if let Ok(Some(entry)) = history.get(start, SearchDirection::Forward) {
+                            *state_opt = Some(HistorySearchState {
+                                prefix: None,
+                                original: Some(line.to_string()),
+                                index: Some(start),
+                                last_found: Some(entry.entry.to_string()),
+                            });
+                            Some(Cmd::Replace(Movement::WholeBuffer, Some(entry.entry.to_string())))
+                        } else {
+                            None
+                        }
+                    } else {
+                        match history.starts_with(line, start, SearchDirection::Reverse) {
+                            Ok(Some(sr)) => {
+                                *state_opt = Some(HistorySearchState {
+                                    prefix: Some(line.to_string()),
+                                    original: Some(line.to_string()),
+                                    index: Some(sr.idx),
+                                    last_found: Some(sr.entry.to_string()),
+                                });
+                                Some(Cmd::Replace(Movement::WholeBuffer, Some(sr.entry.to_string())))
+                            }
+                            _ => {
+                                let found = (0..=start).rev().find_map(|i| {
+                                    history.get(i, SearchDirection::Forward).ok().flatten().and_then(|e| {
+                                        if e.entry.contains(line) {
+                                            Some((i, e.entry.to_string()))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                });
+                                if let Some((idx, entry)) = found {
+                                    *state_opt = Some(HistorySearchState {
+                                        prefix: Some(line.to_string()),
+                                        original: Some(line.to_string()),
+                                        index: Some(idx),
+                                        last_found: Some(entry.clone()),
+                                    });
+                                    Some(Cmd::Replace(Movement::WholeBuffer, Some(entry)))
+                                } else {
+                                    None
+                                }
+                            }
+                        }
+                    }
+                }
+            })
         }
     }
-    struct DownArrowHandler;
-    impl rustyline::ConditionalEventHandler for DownArrowHandler {
-        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
-            if ctx.line().is_empty() {
-                Some(rustyline::Cmd::NextHistory)
-            } else {
-                Some(rustyline::Cmd::HistorySearchForward)
-            }
+    struct DownArrowHandler {
+        history: *const DefaultHistory,
+    }
+    unsafe impl Send for DownArrowHandler {}
+    unsafe impl Sync for DownArrowHandler {}
+    impl ConditionalEventHandler for DownArrowHandler {
+        fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, ctx: &EventContext) -> Option<Cmd> {
+            let line = ctx.line();
+            let history = unsafe { &*self.history };
+            HISTORY_SEARCH.with(|cell| {
+                let mut state_opt = cell.borrow_mut();
+                if let Some(state) = state_opt.as_mut() {
+                    if state.last_found.as_deref() == Some(line) {
+                        let current_idx = state.index.unwrap();
+                        let start = current_idx + 1;
+                        if start >= history.len() {
+                            let original = state.original.take().unwrap_or_default();
+                            *state_opt = None;
+                            return Some(Cmd::Replace(Movement::WholeBuffer, Some(original)));
+                        }
+                        if let Some(prefix) = &state.prefix {
+                            match history.starts_with(prefix, start, SearchDirection::Forward) {
+                                Ok(Some(sr)) => {
+                                    state.index = Some(sr.idx);
+                                    state.last_found = Some(sr.entry.to_string());
+                                    Some(Cmd::Replace(Movement::WholeBuffer, Some(sr.entry.to_string())))
+                                }
+                                _ => {
+                                    let found = (start..history.len()).find_map(|i| {
+                                        history.get(i, SearchDirection::Forward).ok().flatten().and_then(|e| {
+                                            if e.entry.contains(prefix) {
+                                                Some((i, e.entry.to_string()))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                    });
+                                    if let Some((idx, entry)) = found {
+                                        state.index = Some(idx);
+                                        state.last_found = Some(entry.clone());
+                                        Some(Cmd::Replace(Movement::WholeBuffer, Some(entry)))
+                                    } else {
+                                        let original = state.original.take().unwrap_or_default();
+                                        *state_opt = None;
+                                        Some(Cmd::Replace(Movement::WholeBuffer, Some(original)))
+                                    }
+                                }
+                            }
+                        } else {
+                            if let Ok(Some(entry)) = history.get(start, SearchDirection::Forward) {
+                                state.index = Some(start);
+                                state.last_found = Some(entry.entry.to_string());
+                                Some(Cmd::Replace(Movement::WholeBuffer, Some(entry.entry.to_string())))
+                            } else {
+                                let original = state.original.take().unwrap_or_default();
+                                *state_opt = None;
+                                Some(Cmd::Replace(Movement::WholeBuffer, Some(original)))
+                            }
+                        }
+                    } else {
+                        *state_opt = None;
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
         }
     }
-    struct RightArrowHandler;
-    impl rustyline::ConditionalEventHandler for RightArrowHandler {
-        fn handle(&self, _evt: &rustyline::Event, _n: rustyline::RepeatCount, _positive: bool, ctx: &rustyline::EventContext) -> Option<rustyline::Cmd> {
+    struct CompleteHintHandler;
+    impl ConditionalEventHandler for CompleteHintHandler {
+        fn handle(&self, _evt: &Event, _n: RepeatCount, _positive: bool, ctx: &EventContext) -> Option<Cmd> {
             if ctx.pos() == ctx.line().len() {
-                Some(rustyline::Cmd::CompleteHint)
+                Some(Cmd::CompleteHint)
             } else {
                 None
             }
         }
     }
 
+    let history_ptr: *const DefaultHistory = rl.history();
+
     rl.bind_sequence(
-        rustyline::KeyEvent(rustyline::KeyCode::Up, rustyline::Modifiers::empty()),
-        rustyline::EventHandler::Conditional(Box::new(UpArrowHandler)),
+        KeyEvent(KeyCode::Up, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(UpArrowHandler { history: history_ptr })),
     );
     rl.bind_sequence(
-        rustyline::KeyEvent(rustyline::KeyCode::Down, rustyline::Modifiers::empty()),
-        rustyline::EventHandler::Conditional(Box::new(DownArrowHandler)),
+        KeyEvent(KeyCode::Down, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(DownArrowHandler { history: history_ptr })),
     );
     rl.bind_sequence(
-        rustyline::KeyEvent(rustyline::KeyCode::Right, rustyline::Modifiers::empty()),
-        rustyline::EventHandler::Conditional(Box::new(RightArrowHandler)),
+        KeyEvent(KeyCode::Right, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(CompleteHintHandler)),
     );
     rl.bind_sequence(
-        rustyline::KeyEvent(rustyline::KeyCode::Char('f'), rustyline::Modifiers::CTRL),
-        rustyline::Cmd::CompleteHint,
+        KeyEvent(KeyCode::End, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(CompleteHintHandler)),
+    );
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('e'), Modifiers::CTRL),
+        EventHandler::Conditional(Box::new(CompleteHintHandler)),
+    );
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('f'), Modifiers::CTRL),
+        Cmd::CompleteHint,
     );
 
     let helper = JshHelper {
@@ -272,37 +491,11 @@ fn run_interactive(mut state: ShellState) {
         let _ = rl.load_history(&history_path);
     }
 
-    // Helper: minimal percent-encoding suitable for the path component of OSC 7.
-    fn encode_osc7_path(p: &std::path::Path) -> String {
-        let mut out = String::new();
-        for b in p.display().to_string().bytes() {
-            match b {
-                b'%' => out.push_str("%25"),
-                b' ' => out.push_str("%20"),
-                b'#' => out.push_str("%23"),
-                b'?' => out.push_str("%3F"),
-                _ if b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' || b == b'/' => {
-                    out.push(b as char);
-                }
-                _ => out.push_str(&format!("%{:02X}", b)),
-            }
-        }
-        out
-    }
-
     loop {
-        // Emit OSC 7 to inform terminal emulator of the current working directory.
-        // Written to stderr so it bypasses rustyline's alternate-screen buffer
-        // and is reliably picked up by GNOME Terminal / VTE for Ctrl+Shift+T.
-        if let Ok(pwd) = std::env::current_dir() {
-            let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string());
-            use std::io::Write;
-            let encoded_pwd = encode_osc7_path(&pwd);
-            eprint!("\x1b]7;file://{}{}\x1b\\", hostname, encoded_pwd);
-            let _ = std::io::stderr().flush();
-        }
-
         let prompt = state.render_prompt();
+        HISTORY_SEARCH.with(|cell| {
+            *cell.borrow_mut() = None;
+        });
         let readline = rl.readline(&prompt);
         match readline {
             Ok(line) => {
@@ -364,6 +557,9 @@ fn main() {
 if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core::print_version("jsh", env!("CARGO_PKG_VERSION")); std::process::exit(0); }
     let mut state = ShellState::new();
 
+    // Sync $PWD with actual CWD before loading .jshrc or running any commands.
+    sync_pwd();
+
     let args: Vec<String> = std::env::args().collect();
 
     let mut cmd_string: Option<String> = None;
@@ -402,7 +598,6 @@ if std::env::args().skip(1).any(|a| a == "--version" || a == "-v") { jutils_core
     state.set_positional_args(script_args);
 
     if let Some(command_string) = cmd_string {
-        state.load_jshrc();
         state.run_script_text(&command_string);
         std::process::exit(state.last_exit_status);
     }
@@ -448,5 +643,36 @@ mod tests {
         let mut state = ShellState::new();
         run_line_with(&mut state, "TEST_VAR=hello", |_| None);
         assert_eq!(state.get_var("TEST_VAR"), "hello");
+    }
+
+    #[test]
+    fn test_sync_pwd_updates_pwd_env_not_cwd() {
+        let original_cwd = std::env::current_dir().unwrap();
+        let original_pwd = std::env::var("PWD").ok();
+        let fake_pwd = if original_cwd != std::path::Path::new("/tmp") {
+            "/tmp"
+        } else {
+            "/"
+        };
+        unsafe {
+            std::env::set_var("PWD", fake_pwd);
+        }
+        sync_pwd();
+        assert_eq!(std::env::current_dir().unwrap(), original_cwd);
+        assert_eq!(
+            std::env::var("PWD").unwrap(),
+            original_cwd.to_string_lossy().as_ref()
+        );
+        if let Some(pwd) = original_pwd {
+            unsafe { std::env::set_var("PWD", &pwd); }
+        }
+    }
+
+    #[test]
+    fn test_cmd_option_execution() {
+        let mut state = ShellState::new();
+        assert!(!state.is_interactive);
+        run_line_with(&mut state, "true", |_| None);
+        assert_eq!(state.last_exit_status, 0);
     }
 }

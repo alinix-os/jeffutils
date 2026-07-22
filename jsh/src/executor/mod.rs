@@ -54,11 +54,56 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         }
     }
 
-    let expanded: ExpandedPipeline = state.expand_pipeline(&andor.pipeline, heredoc);
+    let mut expanded: ExpandedPipeline = state.expand_pipeline(&andor.pipeline, heredoc);
     if expanded.commands.is_empty() {
         return;
     }
 
+    let is_time = expanded.commands[0].program == "time";
+    if is_time {
+        if expanded.commands[0].args.is_empty() {
+            let sep = get_decimal_separator();
+            eprintln!("real    0m0{}000s", sep);
+            eprintln!("user    0m0{}000s", sep);
+            eprintln!("sys     0m0{}000s", sep);
+            state.last_exit_status = 0;
+            return;
+        }
+
+        // Shift arguments to strip "time"
+        let sub_program = expanded.commands[0].args[0].clone();
+        let sub_args = expanded.commands[0].args[1..].to_vec();
+        expanded.commands[0].program = sub_program;
+        expanded.commands[0].args = sub_args;
+
+        let mut usage_before = unsafe { std::mem::zeroed::<libc::rusage>() };
+        unsafe {
+            libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage_before);
+        }
+        let start_time = std::time::Instant::now();
+
+        execute_expanded(state, expanded, andor.background);
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        let mut usage_after = unsafe { std::mem::zeroed::<libc::rusage>() };
+        unsafe {
+            libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage_after);
+        }
+
+        let user_time = (usage_after.ru_utime.tv_sec - usage_before.ru_utime.tv_sec) as f64
+            + (usage_after.ru_utime.tv_usec - usage_before.ru_utime.tv_usec) as f64 / 1_000_000.0;
+        let sys_time = (usage_after.ru_stime.tv_sec - usage_before.ru_stime.tv_sec) as f64
+            + (usage_after.ru_stime.tv_usec - usage_before.ru_stime.tv_usec) as f64 / 1_000_000.0;
+
+        eprintln!("real    {}", format_time(elapsed));
+        eprintln!("user    {}", format_time(user_time));
+        eprintln!("sys     {}", format_time(sys_time));
+    } else {
+        execute_expanded(state, expanded, andor.background);
+    }
+}
+
+fn execute_expanded(state: &mut ShellState, expanded: ExpandedPipeline, background: bool) {
     // Intercept `exec` builtin command to replace current process
     if expanded.commands.len() == 1 && expanded.commands[0].program == "exec" {
         let cmd = &expanded.commands[0];
@@ -158,7 +203,7 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
         }
     }
 
-    if andor.background {
+    if background {
         let pid = pipeline::spawn_detached(expanded);
         if let Some(pid) = pid {
             eprintln!("[bg] {}", pid);
@@ -168,6 +213,49 @@ fn run_and_or(state: &mut ShellState, andor: &crate::parser::AndOrList, heredoc:
     }
 
     state.last_exit_status = pipeline::execute_with(expanded, state);
+}
+
+fn get_decimal_separator() -> &'static str {
+    for var in &["LC_NUMERIC", "LC_ALL", "LANG"] {
+        if let Ok(val) = std::env::var(var) {
+            let val_lower = val.to_lowercase();
+            if val_lower.starts_with("pt")
+                || val_lower.starts_with("fr")
+                || val_lower.starts_with("de")
+                || val_lower.starts_with("es")
+                || val_lower.starts_with("it")
+                || val_lower.starts_with("ru")
+                || val_lower.starts_with("nl")
+                || val_lower.starts_with("da")
+                || val_lower.starts_with("sv")
+                || val_lower.starts_with("nb")
+                || val_lower.starts_with("nn")
+                || val_lower.starts_with("fi")
+                || val_lower.starts_with("pl")
+                || val_lower.starts_with("cs")
+                || val_lower.starts_with("sk")
+                || val_lower.starts_with("hu")
+                || val_lower.starts_with("tr")
+                || val_lower.starts_with("el")
+            {
+                return ",";
+            }
+        }
+    }
+    "."
+}
+
+fn format_time(seconds: f64) -> String {
+    let minutes = (seconds / 60.0).floor() as u64;
+    let remaining_seconds = seconds - (minutes as f64 * 60.0);
+    let sec_str = format!("{:.3}", remaining_seconds);
+    let sep = get_decimal_separator();
+    let formatted_secs = if sep == "," {
+        sec_str.replace('.', ",")
+    } else {
+        sec_str
+    };
+    format!("{}m{}s", minutes, formatted_secs)
 }
 
 fn apply_current_redirects(redirects: &[crate::parser::lexer::Redirect], heredoc: Option<&str>) {
