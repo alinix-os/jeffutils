@@ -13,10 +13,10 @@ pub fn print_version(name: &str, version: &str) {
     let lang = detect_lang();
     println!("{name} (jeffutils) {version}");
     println!("{}", match lang {
-        "pt_BR" => "Copyright (C) 2026 Jefferson Silva de Souza Rios (Alinix OS).",
-        "pt_PT" => "Copyright (C) 2026 Jefferson Silva de Souza Rios (Alinix OS).",
-        "es"    => "Copyright (C) 2026 Jefferson Silva de Souza Rios (Alinix OS).",
-        _       => "Copyright (C) 2026 Jefferson Silva de Souza Rios (Alinix OS).",
+        "pt_BR" => "Copyright (C) 2026 Jefferson Silva de Souza Rios.",
+        "pt_PT" => "Copyright (C) 2026 Jefferson Silva de Souza Rios.",
+        "es"    => "Copyright (C) 2026 Jefferson Silva de Souza Rios.",
+        _       => "Copyright (C) 2026 Jefferson Silva de Souza Rios.",
     });
     println!("{}", match lang {
         "pt_BR" => "Contato: jeff.silvadsouza@gmail.com",

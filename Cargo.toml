@@ -132,5 +132,4 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
-[patch.crates-io]
-rustyline = { path = "jsh/vendor/rustyline" }
+
